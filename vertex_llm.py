@@ -5,6 +5,8 @@
   1. GOOGLE_CREDENTIALS_ENC + DOC2DOC_SECRETS_KEY（Fernet，与 doc2doc 同一套）
   2. GOOGLE_APPLICATION_CREDENTIALS（明文 JSON 路径）
   3. 同级仓库 doc2doc/src/translationTool/project-*.json（本地开发兜底）
+
+联网：研究员用 Google Search Grounding（Vertex 原生），无需 Custom Search API Key / CX。
 """
 
 from __future__ import annotations
@@ -15,7 +17,7 @@ import logging
 import os
 import tempfile
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -27,7 +29,6 @@ try:
 except ImportError:
     pass
 
-# 与 doc2doc GeminiTranslator 默认值保持一致
 _DEFAULT_PROJECT = "project-204c4e56-18e3-4ca0-94c"
 _DEFAULT_LOCATION = "us-central1"
 _DEFAULT_MODEL = "gemini-2.5-flash"
@@ -71,7 +72,6 @@ def _resolve_credentials_path() -> str:
         logger.info("Gemini 凭证使用 GOOGLE_APPLICATION_CREDENTIALS=%s", env_path)
         return env_path
 
-    # 本地开发：复用同级 yibelin/doc2doc 的服务账号文件
     sibling = _REPO_ROOT.parent / "doc2doc" / "src" / "translationTool"
     candidates = sorted(sibling.glob("project-*.json")) if sibling.is_dir() else []
     if candidates:
@@ -88,10 +88,7 @@ def _resolve_credentials_path() -> str:
 
 
 def configure_vertex_env() -> tuple[str, str, str]:
-    """
-    写入 Vertex 所需环境变量，返回 (project, location, credentials_path)。
-    CrewAI 原生 Gemini SDK 会读取这些变量。
-    """
+    """写入 Vertex 所需环境变量，返回 (project, location, credentials_path)。"""
     credentials_path = _resolve_credentials_path()
     project = (os.getenv("GOOGLE_CLOUD_PROJECT") or _DEFAULT_PROJECT).strip()
     location = (os.getenv("GOOGLE_CLOUD_LOCATION") or _DEFAULT_LOCATION).strip()
@@ -104,6 +101,60 @@ def configure_vertex_env() -> tuple[str, str, str]:
     return project, location, credentials_path
 
 
+def enable_google_search_grounding(llm: Any) -> Any:
+    """
+    在 GeminiCompletion 上启用 Google Search Grounding。
+
+    不能把 {"googleSearch": {}} 塞进 CrewAI 的 tools 列表——会被当成普通
+    function calling 转换并触发 “function name cannot be empty”。
+    正确做法：在 _prepare_generation_config 里注入 types.Tool(google_search=...)。
+    """
+    if getattr(llm, "_yibelin_google_search_patched", False):
+        return llm
+
+    from google.genai import types
+
+    original_prepare = llm._prepare_generation_config
+
+    def prepare_with_grounding(
+        system_instruction=None,
+        tools=None,
+        response_model=None,
+    ):
+        # 滤掉误塞进列表的 googleSearch 伪 tool dict
+        regular_tools = []
+        for t in tools or []:
+            if isinstance(t, dict) and ("googleSearch" in t or "google_search" in t):
+                continue
+            regular_tools.append(t)
+
+        config = original_prepare(
+            system_instruction=system_instruction,
+            tools=regular_tools or None,
+            response_model=response_model,
+        )
+
+        grounding = types.Tool(google_search=types.GoogleSearch())
+        existing = list(config.tools or [])
+        # 避免重复注入
+        if not any(getattr(t, "google_search", None) is not None for t in existing):
+            existing = [grounding] + existing
+
+        # GenerateContentConfig 多为 pydantic model，用 model_copy 更新
+        if hasattr(config, "model_copy"):
+            return config.model_copy(update={"tools": existing})
+        config.tools = existing
+        return config
+
+    llm._prepare_generation_config = prepare_with_grounding  # type: ignore[method-assign]
+    llm._yibelin_google_search_patched = True
+    logger.info(
+        "Enabled Google Search Grounding via GenerateContentConfig on %s",
+        type(llm).__name__,
+    )
+    return llm
+
+
 def build_gemini_llm(
     model_name: Optional[str] = None,
     temperature: float = 0.7,
@@ -113,7 +164,6 @@ def build_gemini_llm(
 
     project, location, _ = configure_vertex_env()
     model = (model_name or os.getenv("GEMINI_MODEL") or _DEFAULT_MODEL).strip()
-    # CrewAI 原生 Google Gen AI：gemini/<model-id>
     model_id = model if model.startswith("gemini/") else f"gemini/{model}"
 
     logger.info(
