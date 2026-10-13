@@ -1,38 +1,38 @@
 name: Yibelin SEO Automation Factory
 
-# 配置触发条件
 on:
   schedule:
-    # 国际标准时间 (UTC)，换算成北京时间为每周一、三、五的凌晨 2:00 自动触发
+    # UTC 周日/二/四 18:00 ≈ 北京时间周一/三/五 02:00
     - cron: '0 18 * * 0,2,4'
-  workflow_dispatch: # 允许你在 GitHub 网页上随时点击按钮“手动立即运行”
+  workflow_dispatch:
 
 jobs:
   run-seo-factory:
     runs-on: ubuntu-latest
 
     steps:
-    # 1. 自动拉取你 GitHub 仓库里的最新代码
     - name: Checkout Code
       uses: actions/checkout@v4
 
-    # 2. 准备 Python 运行环境
     - name: Set up Python
       uses: actions/setup-python@v5
       with:
         python-version: '3.10'
 
-    # 3. 自动安装依赖包
     - name: Install Dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install crewai langchain-google-genai requests google-api-python-client pydantic
+        pip install -r requirements.txt
 
-    # 4. 执行你的 main.py 大模型工厂和 publish_and_monitor.py 脚本
-    # 核心安全：所有敏感 API 密钥均从 GitHub 的 Secrets 库中动态注入加密环境变量中
-    - name: Run SEO Factory and Publish
+    - name: Run SEO Factory
       env:
-        GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        # 与 yibelin 相同的 Vertex 凭证（二选一：加密或明文 JSON）
+        GOOGLE_CREDENTIALS_ENC: ${{ secrets.GOOGLE_CREDENTIALS_ENC }}
+        DOC2DOC_SECRETS_KEY: ${{ secrets.DOC2DOC_SECRETS_KEY }}
+        GOOGLE_CREDENTIALS_JSON: ${{ secrets.GOOGLE_CREDENTIALS_JSON }}
+        GOOGLE_CLOUD_PROJECT: ${{ secrets.GOOGLE_CLOUD_PROJECT }}
+        GOOGLE_CLOUD_LOCATION: ${{ secrets.GOOGLE_CLOUD_LOCATION }}
+        GEMINI_MODEL: ${{ secrets.GEMINI_MODEL }}
         SERPER_API_KEY: ${{ secrets.SERPER_API_KEY }}
         WP_USER: ${{ secrets.WP_USER }}
         WP_APP_PASSWORD: ${{ secrets.WP_APP_PASSWORD }}
@@ -40,5 +40,9 @@ jobs:
         GOOGLE_GSC_KEY_JSON: ${{ secrets.GOOGLE_GSC_KEY_JSON }}
         GSC_SITE_URL: ${{ secrets.GSC_SITE_URL }}
       run: |
-        # 线上运行时，在 main.py 末尾调用 publish_to_wordpress 即可实现流水线闭环
+        if [ -n "$GOOGLE_CREDENTIALS_JSON" ]; then
+          echo "$GOOGLE_CREDENTIALS_JSON" > /tmp/gcp-sa.json
+          export GOOGLE_APPLICATION_CREDENTIALS=/tmp/gcp-sa.json
+        fi
+        export GOOGLE_GENAI_USE_VERTEXAI=true
         python main.py

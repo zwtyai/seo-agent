@@ -1,23 +1,23 @@
 import os
 from typing import List
-from pydantic import BaseModel, Field
+
+from crewai import Agent, Crew, LLM, Process, Task
 from crewai.tools import tool
-from langchain_google_genai import ChatGoogleGenerativeAI
+from pydantic import BaseModel, Field
+
+from vertex_llm import build_gemini_llm
 
 # =====================================================================
-# 1. 环境变量与大模型初始化
+# 1. 环境变量与大模型初始化（与 yibelin / doc2doc Vertex Gemini 同一套）
 # =====================================================================
-# 注意：在本地测试时，请将下方替换为你真实的 API 密钥。
-# 部署到 GitHub Actions 后，系统会自动从 GitHub Secrets 中读取，无需硬编码。
-os.environ["GEMINI_API_KEY"] = os.environ.get("GEMINI_API_KEY", "AIzaSyYourGeminiApiKeyHere")
-os.environ["SERPER_API_KEY"] = os.environ.get("SERPER_API_KEY", "your-serper-api-key")
+# 凭证：GOOGLE_CREDENTIALS_ENC + DOC2DOC_SECRETS_KEY
+#   或 GOOGLE_APPLICATION_CREDENTIALS=/path/to/sa.json
+# 项目：GOOGLE_CLOUD_PROJECT / GOOGLE_CLOUD_LOCATION（默认与 doc2doc 一致）
+# 可选：SERPER_API_KEY（后续搜索工具）
+os.environ.setdefault("SERPER_API_KEY", os.environ.get("SERPER_API_KEY", ""))
 
-# 初始化 Gemini 1.5 Pro 模型（负责长文创作与深度逻辑把控）
-gemini_llm = ChatGoogleGenerativeAI(
-    model="gemini-1.5-pro",
-    temperature=0.7,  # 适度的创造力
-    google_api_key=os.environ["GEMINI_API_KEY"]
-)
+# 与 yibelin 相同：Vertex AI + gemini-2.5-flash
+gemini_llm: LLM = build_gemini_llm(temperature=0.7)
 
 
 # =====================================================================
@@ -38,10 +38,9 @@ class KeywordResearcherOutput(BaseModel):
 # 3. 自定义 SEO 与产品知识库工具集（Tools）
 # =====================================================================
 
-@tool("产品功能知识库检索工具")
+@tool("product_knowledge_base")
 def product_knowledge_base_tool(query: str) -> str:
     """连接‘译比邻’内部产品功能知识库，返回高保真排版保留、双栏论文优化、扫描件 OCR 增强等权威技术参数。"""
-    # 这里存储的是译比邻的核心卖点，Agent 写技术教程时必须以此为准
     knowledge = (
         "【译比邻产品核心技术参数与卖点】：\n"
         "1. 专注版式保留：普通工具只翻文字导致格式错乱，译比邻按段落处理，精准还原原文排版。\n"
@@ -54,26 +53,22 @@ def product_knowledge_base_tool(query: str) -> str:
     return knowledge
 
 
-@tool("绝对路径内链与技术规范审查工具")
+@tool("seo_link_injector")
 def seo_optimization_tool(markdown_content: str) -> str:
     """自动化发布前的严苛质检门禁。通过确定性 Python 代码强行在文章核心自然处注入带绝对路径的锚文本。"""
     target_anchor = "[PDF 在线翻译](https://yibelin.com)"
 
-    # 待替换的常见自然词汇列表
     keywords_to_replace = ["PDF在线翻译", "pdf在线翻译", "PDF 在线翻译", "pdf 在线翻译"]
 
     optimized_content = markdown_content
     replaced = False
 
-    # 1. 强行内链闭环：在文章中最自然出现关键词的地方，替换为黄金锚文本链接
     for kw in keywords_to_replace:
         if kw in optimized_content:
-            # 仅替换第一次出现的词汇，避免过度优化（Over-optimization）被谷歌惩罚
             optimized_content = optimized_content.replace(kw, target_anchor, 1)
             replaced = True
             break
 
-    # 2. 安全兜底机制：如果 Agent 写的文章里完全没提到这些词，则强制在文章最开头的第一段自然融入
     if not replaced and target_anchor not in optimized_content:
         intro_text = f"在日常进行科研论文阅读或商务合同处理时，拥有一款好用的 {target_anchor} 工具往往能让我们事半功倍。\n\n"
         optimized_content = intro_text + optimized_content
@@ -85,40 +80,36 @@ print("✅ 第一步：环境配置与核心 SEO 工具集构建成功！")
 
 
 # =====================================================================
-# 4. 创建虚拟 Agent 岗位 (全面采用 Gemini 1.5 系列并进行动态入参设计)
+# 4. 创建虚拟 Agent 岗位（Vertex Gemini 2.5 Flash）
 # =====================================================================
 
-# 👤 岗位一：关键词研究员 (使用高性能的 Gemini 1.5 Flash 快速捞词)
 keyword_researcher = Agent(
     role="资深 SEO 关键词研究员 (Keyword Researcher)",
     goal="寻找大厂（如 Smallpdf、DeepL）在 {seed_keyword} 领域的防御漏洞，挖掘高价值、低竞争的长尾痛点交叉词",
     backstory="""你是一名极其敏锐的数据分析师。擅长分析用户搜索意图。
     你的工作是帮‘译比邻’在 {seed_keyword} 这一核心赛道上进行错位迂回战术，专挑大厂吃不到、做不好的科研/商务长尾词（例如公式乱码、扫描件无法选中）。""",
-    # 待注入的搜索工具：在后续完整版中我们会加入 google_search_tool
     llm=gemini_llm,
     verbose=True
 )
 
-# 👤 岗位二：技术内容创作者 (使用深度推理的 Gemini 1.5 Pro 攻坚高质量长文)
 content_writer = Agent(
     role="顶尖科技博客主 (Technical Content Writer)",
     goal="结合译比邻技术优势，针对长尾词撰写 1200 字以上、直击科研或商务痛点的商业级 Markdown 深度教程",
     backstory="""你是一位文风生动扎实、逻辑极其严谨的科技意见领袖（KOL）。
     【铁律】：你极度厌恶 AI 废话。绝对禁止在文章中使用诸如‘总而言之’、‘值得注意的是’、‘如前所述’、‘显而易见’、‘综上所述’等空洞的排比句和翻译感文笔。
     你精通工具技术评测，写出的文章必须像真正的人类专家在分享硬核干货。""",
-    tools=[product_knowledge_base_tool], # 注入我们在第一步定义的活字典工具
+    tools=[product_knowledge_base_tool],
     llm=gemini_llm,
     verbose=True
 )
 
-# 👤 岗位三：SEO 质量把控总编 (使用 Gemini 1.5 Pro 铁面质检)
 seo_editor = Agent(
     role="严苛的 SEO 质量把控总编 (SEO Editor)",
     goal="执行最严厉的技术规范审查、代码内链注入，确保内容完美符合 {seed_keyword} 的生产级规范",
     backstory="""你是内容的最后一到门禁。你眼中只有数据和技术指标。
     你负责死盯三大技术指标：关键词密度（1.5%-2.5%）、H1/H2/H3 标签结构的严密性、以及主站首页绝对路径锚文本的强行注入。
     任何带有 AI 翻译感、排版混乱或缺少绝对链接的内容都会被你无情驳回。""",
-    tools=[seo_optimization_tool], # 注入我们在第一步定义的内链铁律工具
+    tools=[seo_optimization_tool],
     llm=gemini_llm,
     verbose=True
 )
@@ -132,7 +123,7 @@ research_task = Task(
     最常遇到的精准长尾痛点词（如学术论文公式乱、扫描件无法选字等）。
     分析目标用户的画像、痛点以及竞品的页面漏洞。""",
     expected_output="包含长尾词详细画像、痛点场景和竞品漏洞的结构化简报。",
-    output_json=KeywordResearcherOutput,  # 强行规范第一阶段输出为我们在第一步定义的 Pydantic JSON 格式
+    output_json=KeywordResearcherOutput,
     agent=keyword_researcher
 )
 
@@ -163,23 +154,21 @@ print("✅ 第二步：Agent 岗位与动态 Task 任务构建成功！")
 yibelin_seo_factory = Crew(
     agents=[keyword_researcher, content_writer, seo_editor],
     tasks=[research_task, write_task, edit_task],
-    process=Process.sequential,  # 严格按照“挖词->写稿->质检”的顺序进行链式传递
-    verbose=True  # 开启详细日志，方便你在终端看到 Gemini 思考的每一步
+    process=Process.sequential,
+    verbose=True
 )
 
 # =====================================================================
 # 7. 一键注入动态参数并启动测试 (本地闭环运行测试)
 # =====================================================================
 if __name__ == "__main__":
-    print("🚀 yibelin.com 基于 Gemini 的 SEO 自动化工厂开始组装运转...")
+    print("🚀 yibelin.com 基于 Vertex Gemini 的 SEO 自动化工厂开始组装运转...")
 
-    # 动态参数注入：在这里输入你想优化的种子词，系统会自动替换掉代码里的 {seed_keyword}
     dynamic_inputs = {
         "seed_keyword": "PDF 在线翻译"
     }
 
     try:
-        # 正式开机运行，传入动态参数
         final_article_payload = yibelin_seo_factory.kickoff(inputs=dynamic_inputs)
 
         print("\n=================== ✨ 最终生产级文章成果展示 ===================\n")
@@ -188,5 +177,7 @@ if __name__ == "__main__":
         print("✅ 第三步：Crew 团队成功组装，且已跑通本地传参运行闭环！")
 
     except Exception as e:
-        print(f"❌ 运行中出现异常，请检查 Gemini API 密钥是否正确。错误信息: {str(e)}")
-
+        print(
+            f"❌ 运行中出现异常，请检查 Vertex 凭证 / GOOGLE_CLOUD_PROJECT。"
+            f"错误信息: {str(e)}"
+        )
