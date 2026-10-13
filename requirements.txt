@@ -1,0 +1,10 @@
+# crewai 要求 Python >=3.10,<3.14（不要用 3.14 建 venv）
+# 推荐：python3.10 -m venv .venv && source .venv/bin/activate
+crewai[google-genai]>=1.0.0,<2
+google-genai>=0.1.0
+google-auth>=2.29.0
+cryptography>=42.0.0
+python-dotenv>=1.0.0
+pydantic>=2.0.0
+requests>=2.31.0
+google-api-python-client>=2.100.0
