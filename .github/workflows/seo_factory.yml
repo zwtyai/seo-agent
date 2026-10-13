@@ -33,6 +33,9 @@ jobs:
         GOOGLE_CLOUD_PROJECT: ${{ secrets.GOOGLE_CLOUD_PROJECT }}
         GOOGLE_CLOUD_LOCATION: ${{ secrets.GOOGLE_CLOUD_LOCATION }}
         GEMINI_MODEL: ${{ secrets.GEMINI_MODEL }}
+        GOOGLE_SEARCH_CX: ${{ secrets.GOOGLE_SEARCH_CX }}
+        GOOGLE_CSE_API_KEY: ${{ secrets.GOOGLE_CSE_API_KEY }}
+        GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
         SERPER_API_KEY: ${{ secrets.SERPER_API_KEY }}
         WP_USER: ${{ secrets.WP_USER }}
         WP_APP_PASSWORD: ${{ secrets.WP_APP_PASSWORD }}
