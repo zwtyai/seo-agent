@@ -131,10 +131,17 @@ def enable_google_search_grounding(llm: Any) -> Any:
                 continue
             regular_tools.append(t)
 
+        # Vertex：Search tool 与 controlled generation（response_schema /
+        # response_mime_type=json）不能同时用，故强制关闭结构化输出。
+        if response_model is not None:
+            logger.warning(
+                "忽略 response_model=%s：Google Search Grounding 不支持 controlled generation",
+                getattr(response_model, "__name__", type(response_model).__name__),
+            )
         config = original_prepare(
             system_instruction=system_instruction,
             tools=regular_tools or None,
-            response_model=response_model,
+            response_model=None,
         )
 
         grounding = types.Tool(google_search=types.GoogleSearch())
@@ -143,10 +150,16 @@ def enable_google_search_grounding(llm: Any) -> Any:
         if not any(getattr(t, "google_search", None) is not None for t in existing):
             existing = [grounding] + existing
 
+        updates = {
+            "tools": existing,
+            "response_schema": None,
+            "response_mime_type": None,
+        }
         # GenerateContentConfig 多为 pydantic model，用 model_copy 更新
         if hasattr(config, "model_copy"):
-            return config.model_copy(update={"tools": existing})
-        config.tools = existing
+            return config.model_copy(update=updates)
+        for key, value in updates.items():
+            setattr(config, key, value)
         return config
 
     llm._prepare_generation_config = prepare_with_grounding  # type: ignore[method-assign]
