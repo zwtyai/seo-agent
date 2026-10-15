@@ -98,6 +98,11 @@ Workflow: [`.github/workflows/seo_factory.yml`](.github/workflows/seo_factory.ym
 
 `main` is protected: **all changes (including generated docs) go through pull requests.**
 
+If the workflow fails with `GitHub Actions is not permitted to create or approve pull requests`:
+
+1. **Org setting (preferred):** Organization → Settings → Actions → General → Workflow permissions → enable **Read and write permissions** and **Allow GitHub Actions to create and approve pull requests**.
+2. **Or** add a secret `GH_PAT` (classic PAT with `repo`, or fine-grained with Contents + Pull requests on this repo). The workflow uses `GH_PAT` when present.
+
 ---
 
 ## Repository layout
