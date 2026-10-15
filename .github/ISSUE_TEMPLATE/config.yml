@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Live demo (GitHub Pages)
+    url: https://zwtyai.github.io/seo-agent/
+    about: Browse generated sample articles
