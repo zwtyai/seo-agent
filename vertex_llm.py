@@ -29,7 +29,6 @@ try:
 except ImportError:
     pass
 
-_DEFAULT_PROJECT = "project-204c4e56-18e3-4ca0-94c"
 _DEFAULT_LOCATION = "us-central1"
 _DEFAULT_MODEL = "gemini-2.5-flash"
 _ENC_PREFIX = "enc:v1:"
@@ -90,7 +89,11 @@ def _resolve_credentials_path() -> str:
 def configure_vertex_env() -> tuple[str, str, str]:
     """写入 Vertex 所需环境变量，返回 (project, location, credentials_path)。"""
     credentials_path = _resolve_credentials_path()
-    project = (os.getenv("GOOGLE_CLOUD_PROJECT") or _DEFAULT_PROJECT).strip()
+    project = (os.getenv("GOOGLE_CLOUD_PROJECT") or "").strip()
+    if not project:
+        raise ValueError(
+            "请设置环境变量 GOOGLE_CLOUD_PROJECT（写入本地 .env，勿提交到仓库）"
+        )
     location = (os.getenv("GOOGLE_CLOUD_LOCATION") or _DEFAULT_LOCATION).strip()
 
     os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = credentials_path
