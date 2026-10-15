@@ -1,9 +1,7 @@
 import re
-from typing import List
 
 from crewai import Agent, Crew, Process, Task
 from crewai.tools import tool
-from pydantic import BaseModel, Field
 
 from static_publish import publish_static_page
 from vertex_llm import (
@@ -37,31 +35,7 @@ editor_llm = build_gemini_llm(temperature=0.7)
 
 
 # =====================================================================
-# 2. Pydantic 数据结构
-# =====================================================================
-class LongTailKeywordBrief(BaseModel):
-    keyword: str = Field(..., description="挖掘出的高价值、低竞争长尾痛点词")
-    user_persona: str = Field(..., description="目标用户画像（如研一学生、外贸业务员）")
-    pain_points: str = Field(..., description="用户遭遇的具体技术痛点（如公式错乱、扫描件无法选字）")
-    competitor_urls: List[str] = Field(
-        ..., description="Google Search Grounding 检索到的真实帖子/竞品页面 URL"
-    )
-    evidence_snippets: List[str] = Field(
-        default_factory=list,
-        description="联网检索到的真实摘要/吐槽摘录",
-    )
-
-
-class KeywordResearcherOutput(BaseModel):
-    briefs: List[LongTailKeywordBrief] = Field(..., description="长尾词研究简报列表")
-    search_queries_used: List[str] = Field(
-        default_factory=list,
-        description="实际用于联网检索的 query 列表（若模型有披露）",
-    )
-
-
-# =====================================================================
-# 3. 本地工具（写手 / 总编；研究员靠 Grounding，不挂 Custom Search）
+# 2. 本地工具（写手 / 总编；研究员靠 Grounding，不挂 Custom Search）
 # =====================================================================
 
 @tool("product_knowledge_base")
@@ -155,12 +129,14 @@ research_task = Task(
     只查 1 个核心意图即可（优先：格式错乱 / layout broken，或扫描件 OCR 失败，二选一）。
     只输出 **1 个**长尾痛点 brief（不要 3-5 个），附用户画像、痛点、1-2 个真实 URL 与短摘要。
     控制检索轮次：能得出 1 条可用证据就结束，勿扩大范围。
-    【禁止】在没有任何联网依据时凭空编造。""",
+    【禁止】在没有任何联网依据时凭空编造。
+    【格式】用 Markdown 小节输出（勿依赖 API JSON schema；Search Grounding 不支持 controlled generation）：
+    ## keyword / ## user_persona / ## pain_points / ## competitor_urls / ## evidence_snippets。""",
     expected_output=(
-        "结构化 JSON：briefs 仅含 1 条；含 keyword/persona/pain_points/"
-        "competitor_urls/evidence_snippets 与 search_queries_used。"
+        "Markdown 简报：仅 1 条痛点；含 keyword、user_persona、pain_points、"
+        "competitor_urls（真实 URL）、evidence_snippets。"
     ),
-    output_json=KeywordResearcherOutput,
+    # 注意：不可设 output_json——Vertex Search tool 与 response_schema 互斥
     agent=keyword_researcher,
 )
 
