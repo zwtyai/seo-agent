@@ -58,9 +58,10 @@ jobs:
         python main.py
 
     # 把生成的 docs/ 经 PR 合入 main → Pages（分支 /docs）自动更新
+    # 若 org 禁止 Actions 用 GITHUB_TOKEN 开 PR，请配置 Secret GH_PAT（repo 权限的 classic PAT 或 fine-grained: contents+PRs）
     - name: Publish docs via PR
       env:
-        GH_TOKEN: ${{ github.token }}
+        GH_TOKEN: ${{ secrets.GH_PAT || github.token }}
       run: |
         git config user.name "github-actions[bot]"
         git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
