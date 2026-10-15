@@ -18,17 +18,17 @@ It researches real search pain points (Google Search Grounding), drafts a short 
 | Step | Agent / component | Job |
 |------|-------------------|-----|
 | 1 | Keyword Researcher | Vertex Gemini + **Google Search Grounding** finds one long-tail pain point with real URLs |
-| 2 | Content Writer | Writes a short Markdown draft using a product knowledge tool |
-| 3 | SEO Editor | Density / structure check + inject absolute internal links |
-| 4 | `static_publish.py` | Writes HTML/Markdown under `docs/` for GitHub Pages |
+| 2 | Content Writer | Writes an ~800–1200 character Markdown article from research + product KB |
+| 3 | SEO Editor | Unique title check, density / structure, inject absolute internal links |
+| 4 | `static_publish.py` | Writes HTML under `docs/`; index uses content titles with dedupe |
 | 5 | GitHub Actions | Scheduled or manual run; opens a PR to update `docs/` |
 
 ```text
 seed keyword
-    → Grounding research (1 brief)
-    → short Markdown draft (~200 words in dry-run mode)
-    → SEO link pass
-    → docs/posts/*.html + docs/index.html
+    → Grounding research (1 new angle vs existing titles)
+    → Markdown article (~800–1200 Chinese characters)
+    → SEO link + title uniqueness pass
+    → docs/posts/*.html + docs/index.html (list shows H1, not dates)
     → PR → merge → Pages (or later Vercel, etc.)
 ```
 

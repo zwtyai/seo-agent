@@ -1,5 +1,5 @@
 """
-把 Crew 产出的 Markdown 写成 site/ 下的静态 HTML，供本地预览或 GitHub Pages。
+把 Crew 产出的 Markdown 写成 docs/ 下的静态 HTML，供本地预览或 GitHub Pages。
 """
 
 from __future__ import annotations
@@ -13,6 +13,10 @@ from typing import Any, Optional
 _REPO_ROOT = Path(__file__).resolve().parent
 # GitHub Pages「从分支部署」只支持 / 或 /docs，故静态站落在 docs/
 _DEFAULT_SITE_DIR = _REPO_ROOT / "docs"
+
+_TITLE_TAG_RE = re.compile(r"<title>(.*?)</title>", re.IGNORECASE | re.DOTALL)
+_H1_TAG_RE = re.compile(r"<h1[^>]*>(.*?)</h1>", re.IGNORECASE | re.DOTALL)
+_TAG_RE = re.compile(r"<[^>]+>")
 
 
 def _result_to_markdown(result: Any) -> str:
@@ -32,12 +36,90 @@ def _slugify(text: str, max_len: int = 48) -> str:
     return (text or "post")[:max_len]
 
 
+def _strip_html(text: str) -> str:
+    return _TAG_RE.sub("", text).replace("&nbsp;", " ").strip()
+
+
+def _clean_title_text(title: str) -> str:
+    """去掉误写入标题的 Markdown 链接等，只保留可读文案。"""
+    t = title.strip()
+    t = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", t)
+    t = _strip_html(t)
+    t = re.sub(r"\s+", " ", t).strip()
+    return t
+
+
 def _extract_title(markdown: str, fallback: str) -> str:
     for line in markdown.splitlines():
         s = line.strip()
         if s.startswith("# "):
-            return s[2:].strip() or fallback
+            return _clean_title_text(s[2:]) or fallback
     return fallback
+
+
+def _title_from_html(html: str) -> Optional[str]:
+    m = _TITLE_TAG_RE.search(html)
+    if m:
+        t = _clean_title_text(m.group(1))
+        if t:
+            return t
+    m = _H1_TAG_RE.search(html)
+    if m:
+        t = _clean_title_text(m.group(1))
+        if t:
+            return t
+    return None
+
+
+def _normalize_title_key(title: str) -> str:
+    """用于去重比较：去空白与常见标点。"""
+    t = title.strip().lower()
+    t = re.sub(r"\s+", "", t)
+    t = re.sub(r"[^\w一-龥]+", "", t, flags=re.UNICODE)
+    return t
+
+
+def list_published_titles(site_dir: Optional[Path] = None) -> list[str]:
+    """读取已发布文章的内容标题（优先 HTML <title>/H1）。"""
+    site_dir = Path(site_dir) if site_dir else _DEFAULT_SITE_DIR
+    posts_dir = site_dir / "posts"
+    if not posts_dir.is_dir():
+        return []
+    titles: list[str] = []
+    for p in sorted(posts_dir.glob("*.html"), reverse=True):
+        if p.name.startswith("_"):
+            continue
+        try:
+            html = p.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        title = _title_from_html(html) or p.stem
+        titles.append(title)
+    return titles
+
+
+def _ensure_unique_title(title: str, existing: list[str], *, hint: str = "") -> str:
+    keys = {_normalize_title_key(t) for t in existing if t}
+    key = _normalize_title_key(title)
+    if key and key not in keys:
+        return title
+
+    hint_label = _slugify(hint, 16).replace("-", "") or "续篇"
+    candidate = f"{title}（{hint_label}）"
+    n = 2
+    while _normalize_title_key(candidate) in keys:
+        candidate = f"{title}（{n}）"
+        n += 1
+    return candidate
+
+
+def _replace_markdown_h1(markdown: str, new_title: str) -> str:
+    lines = markdown.splitlines()
+    for i, line in enumerate(lines):
+        if line.strip().startswith("# "):
+            lines[i] = f"# {new_title}"
+            return "\n".join(lines)
+    return f"# {new_title}\n\n{markdown}"
 
 
 def _markdown_to_html_body(markdown: str) -> str:
@@ -87,8 +169,11 @@ def _rebuild_index(site_dir: Path) -> Path:
     for p in posts:
         if p.name.startswith("_"):
             continue
-        # 从文件名粗提标题；页面内再有完整 H1
-        label = p.stem
+        try:
+            html = p.read_text(encoding="utf-8")
+        except OSError:
+            html = ""
+        label = _title_from_html(html) or p.stem
         items.append(f'      <li><a href="posts/{escape(p.name)}">{escape(label)}</a></li>')
 
     listing = "\n".join(items) if items else "      <li>（暂无文章）</li>"
@@ -121,6 +206,11 @@ def _rebuild_index(site_dir: Path) -> Path:
     return index_path
 
 
+def rebuild_index(site_dir: Optional[Path] = None) -> Path:
+    site_dir = Path(site_dir) if site_dir else _DEFAULT_SITE_DIR
+    return _rebuild_index(site_dir)
+
+
 def publish_static_page(
     result: Any,
     *,
@@ -128,8 +218,8 @@ def publish_static_page(
     site_dir: Optional[Path] = None,
 ) -> Path:
     """
-    将一次流水线结果写成 site/posts/<timestamp>-<slug>.html，并刷新 index.html。
-    返回文章 HTML 路径。
+    将一次流水线结果写成 docs/posts/<timestamp>-<title-slug>.html，并刷新 index.html。
+    列表标题取自文章 H1/内容标题（非日期文件名）；同题自动去重改写。
     """
     site_dir = Path(site_dir) if site_dir else _DEFAULT_SITE_DIR
     posts_dir = site_dir / "posts"
@@ -138,10 +228,15 @@ def publish_static_page(
     assets_dir.mkdir(parents=True, exist_ok=True)
 
     markdown = _result_to_markdown(result)
-    title = _extract_title(markdown, fallback=seed_keyword)
+    existing = list_published_titles(site_dir)
+    raw_title = _extract_title(markdown, fallback=seed_keyword)
+    title = _ensure_unique_title(raw_title, existing, hint=seed_keyword)
+    if title != raw_title:
+        markdown = _replace_markdown_h1(markdown, title)
+
     body = _markdown_to_html_body(markdown)
     stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
-    slug = _slugify(seed_keyword)
+    slug = _slugify(title) or _slugify(seed_keyword)
     filename = f"{stamp}-{slug}.html"
     out_path = posts_dir / filename
     out_path.write_text(_page_shell(title, body), encoding="utf-8")
@@ -152,3 +247,11 @@ def publish_static_page(
 
     _rebuild_index(site_dir)
     return out_path
+
+
+if __name__ == "__main__":
+    path = rebuild_index()
+    titles = list_published_titles()
+    print(f"✅ 已重建索引: {path}")
+    for t in titles:
+        print(f"  - {t}")
