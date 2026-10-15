@@ -7,8 +7,10 @@ on:
   workflow_dispatch:
 
 # 本 workflow 不监听 push，避免「提交 site/ → 再触发工厂」死循环
+# main 已开 PR-only 规则：docs 变更走分支 + PR merge，不能直推 main
 permissions:
   contents: write
+  pull-requests: write
 
 jobs:
   run-seo-factory:
@@ -55,15 +57,26 @@ jobs:
         export GOOGLE_GENAI_USE_VERTEXAI=true
         python main.py
 
-    # 把生成的 docs/ 提交回仓库 → Pages（分支 /docs）自动更新
-    - name: Commit static site
+    # 把生成的 docs/ 经 PR 合入 main → Pages（分支 /docs）自动更新
+    - name: Publish docs via PR
+      env:
+        GH_TOKEN: ${{ github.token }}
       run: |
         git config user.name "github-actions[bot]"
         git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
         git add docs/
         if git diff --staged --quiet; then
           echo "No docs/ changes to commit"
-        else
-          git commit -m "chore: publish SEO static page from Actions"
-          git push
+          exit 0
         fi
+        branch="chore/seo-docs-${GITHUB_RUN_ID}"
+        git checkout -b "$branch"
+        git commit -m "chore: publish SEO static page from Actions"
+        git push -u origin HEAD
+        pr_url=$(gh pr create \
+          --base main \
+          --head "$branch" \
+          --title "chore: publish SEO static page from Actions" \
+          --body "Automated docs publish from workflow run ${GITHUB_RUN_ID}.")
+        echo "Opened $pr_url"
+        gh pr merge "$pr_url" --squash --delete-branch
