@@ -11,7 +11,8 @@ from pathlib import Path
 from typing import Any, Optional
 
 _REPO_ROOT = Path(__file__).resolve().parent
-_DEFAULT_SITE_DIR = _REPO_ROOT / "site"
+# GitHub Pages「从分支部署」只支持 / 或 /docs，故静态站落在 docs/
+_DEFAULT_SITE_DIR = _REPO_ROOT / "docs"
 
 
 def _result_to_markdown(result: Any) -> str:

@@ -199,7 +199,7 @@ if __name__ == "__main__":
 
         html_path = publish_static_page(result, seed_keyword=seed_keyword)
         print(f"✅ 静态页已写入: {html_path}")
-        print("✅ 流程：Grounding 挖词 → 短文 → SEO 质检 → site/ 静态页")
+        print("✅ 流程：Grounding 挖词 → 短文 → SEO 质检 → docs/ 静态页（GitHub Pages）")
     except Exception as e:
         print(
             f"❌ 运行异常。请检查 Vertex 凭证 / GOOGLE_CLOUD_PROJECT，"

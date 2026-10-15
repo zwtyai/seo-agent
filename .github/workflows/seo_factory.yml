@@ -55,14 +55,14 @@ jobs:
         export GOOGLE_GENAI_USE_VERTEXAI=true
         python main.py
 
-    # 把生成的 site/ 提交回仓库 → 可触发 pages.yml 部署
+    # 把生成的 docs/ 提交回仓库 → Pages（分支 /docs）自动更新
     - name: Commit static site
       run: |
         git config user.name "github-actions[bot]"
         git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-        git add site/
+        git add docs/
         if git diff --staged --quiet; then
-          echo "No site/ changes to commit"
+          echo "No docs/ changes to commit"
         else
           git commit -m "chore: publish SEO static page from Actions"
           git push
