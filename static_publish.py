@@ -36,6 +36,38 @@ def _slugify(text: str, max_len: int = 48) -> str:
     return (text or "post")[:max_len]
 
 
+def _infer_content_type(markdown: str) -> str:
+    """从文章内容推断内容类型。"""
+    md = markdown.lower()
+    title = ""
+    for line in markdown.splitlines():
+        if line.strip().startswith("# "):
+            title = line.strip()[2:].lower()
+            break
+    
+    # 对比评测型
+    if "|" in markdown and ("对比" in md or "vs" in md or "比较" in md):
+        return "对比评测型"
+    
+    # 教程指南型
+    if any(kw in title for kw in ["如何", "怎么", "步骤", "教程", "指南"]):
+        return "教程指南型"
+    if md.count("第一步") + md.count("第二步") + md.count("步骤") >= 3:
+        return "教程指南型"
+    
+    # FAQ型
+    if md.count("## q:") + md.count("## 问") >= 5:
+        return "FAQ型"
+    
+    # 案例故事型
+    if any(kw in md for kw in ["故事", "案例", "经历", "博士", "研究生", "用户"]):
+        if md.count("使用") + md.count("遇到") + md.count("解决") >= 5:
+            return "案例故事型"
+    
+    # 默认深度分析型
+    return "深度分析型"
+
+
 def _strip_html(text: str) -> str:
     return _TAG_RE.sub("", text).replace("&nbsp;", " ").strip()
 
@@ -96,6 +128,25 @@ def list_published_titles(site_dir: Optional[Path] = None) -> list[str]:
         title = _title_from_html(html) or p.stem
         titles.append(title)
     return titles
+
+
+def list_published_content_types(site_dir: Optional[Path] = None) -> list[str]:
+    """读取已发布文章的内容类型（从 Markdown 推断）。"""
+    site_dir = Path(site_dir) if site_dir else _DEFAULT_SITE_DIR
+    posts_dir = site_dir / "posts"
+    if not posts_dir.is_dir():
+        return []
+    types: list[str] = []
+    for p in sorted(posts_dir.glob("*.md"), reverse=True):
+        if p.name.startswith("_"):
+            continue
+        try:
+            markdown = p.read_text(encoding="utf-8")
+            content_type = _infer_content_type(markdown)
+            types.append(content_type)
+        except OSError:
+            continue
+    return types
 
 
 def _ensure_unique_title(title: str, existing: list[str], *, hint: str = "") -> str:
