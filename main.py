@@ -5,6 +5,7 @@ from crewai import Agent, Crew, Process, Task
 from crewai.tools import tool
 from pydantic import BaseModel, Field
 
+from static_publish import publish_static_page
 from vertex_llm import (
     build_gemini_llm,
     configure_vertex_env,
@@ -110,13 +111,12 @@ print("✅ 第一步：Vertex LLM / 本地工具就绪")
 keyword_researcher = Agent(
     role="资深 SEO 关键词研究员 (Keyword Researcher)",
     goal=(
-        "借助 Google Search Grounding 实时联网，寻找大厂在 {seed_keyword} "
-        "领域的防御漏洞，挖掘高价值、低竞争长尾痛点词"
+        "借助 Google Search Grounding 快速验证联网挖词；联调阶段只产出 "
+        "1 个与 {seed_keyword} 相关的高价值长尾痛点即可"
     ),
     backstory="""你接入了 Gemini 的 Google Search Grounding。
-    思考时会自动检索实时网页（Reddit、V2EX、知乎、技术论坛等）。
-    【铁律】禁止纯靠训练数据臆造抱怨；结论须带来源 URL 与可核对的摘要。
-    重点：双栏排版错乱、扫描件无法选字、公式乱码、表格串列。""",
+    【联调铁律】少搜、快结：只挖 1 个痛点，带真实 URL/摘要就收工。
+    【禁止】纯靠训练数据臆造抱怨。""",
     llm=researcher_llm,
     verbose=True,
 )
@@ -151,13 +151,14 @@ seo_editor = Agent(
 # =====================================================================
 
 research_task = Task(
-    description="""针对种子词 '{seed_keyword}'，使用 Google Search Grounding 联网检索真实抱怨。
-    建议覆盖意图：格式错乱 / layout broken、扫描件 OCR 失败、公式乱码、大厂工具吐槽（Smallpdf、DeepL 等）。
-    输出 3-5 个长尾痛点，附用户画像、痛点、真实 URL 与摘要。
+    description="""针对种子词 '{seed_keyword}'，使用 Google Search Grounding 做**极简联调检索**。
+    只查 1 个核心意图即可（优先：格式错乱 / layout broken，或扫描件 OCR 失败，二选一）。
+    只输出 **1 个**长尾痛点 brief（不要 3-5 个），附用户画像、痛点、1-2 个真实 URL 与短摘要。
+    控制检索轮次：能得出 1 条可用证据就结束，勿扩大范围。
     【禁止】在没有任何联网依据时凭空编造。""",
     expected_output=(
-        "结构化 JSON：briefs（keyword/persona/pain_points/competitor_urls/"
-        "evidence_snippets）与 search_queries_used。"
+        "结构化 JSON：briefs 仅含 1 条；含 keyword/persona/pain_points/"
+        "competitor_urls/evidence_snippets 与 search_queries_used。"
     ),
     output_json=KeywordResearcherOutput,
     agent=keyword_researcher,
@@ -187,14 +188,18 @@ yibelin_seo_factory = Crew(
 
 if __name__ == "__main__":
     print("🚀 SEO 工厂启动（Vertex Gemini + Google Search Grounding）...")
+    seed_keyword = "PDF 在线翻译"
     try:
         result = yibelin_seo_factory.kickoff(
-            inputs={"seed_keyword": "PDF 在线翻译"}
+            inputs={"seed_keyword": seed_keyword}
         )
         print("\n=================== ✨ 成品 ===================\n")
         print(result)
         print("\n================================================\n")
-        print("✅ 流程：Grounding 挖词 → 短文 → SEO 质检")
+
+        html_path = publish_static_page(result, seed_keyword=seed_keyword)
+        print(f"✅ 静态页已写入: {html_path}")
+        print("✅ 流程：Grounding 挖词 → 短文 → SEO 质检 → site/ 静态页")
     except Exception as e:
         print(
             f"❌ 运行异常。请检查 Vertex 凭证 / GOOGLE_CLOUD_PROJECT，"

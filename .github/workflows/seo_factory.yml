@@ -6,6 +6,10 @@ on:
     - cron: '0 18 * * 0,2,4'
   workflow_dispatch:
 
+# 本 workflow 不监听 push，避免「提交 site/ → 再触发工厂」死循环
+permissions:
+  contents: write
+
 jobs:
   run-seo-factory:
     runs-on: ubuntu-latest
@@ -26,7 +30,6 @@ jobs:
 
     - name: Run SEO Factory
       env:
-        # 与 yibelin 相同的 Vertex 凭证（二选一：加密或明文 JSON）
         GOOGLE_CREDENTIALS_ENC: ${{ secrets.GOOGLE_CREDENTIALS_ENC }}
         DOC2DOC_SECRETS_KEY: ${{ secrets.DOC2DOC_SECRETS_KEY }}
         GOOGLE_CREDENTIALS_JSON: ${{ secrets.GOOGLE_CREDENTIALS_JSON }}
@@ -42,6 +45,8 @@ jobs:
         WP_URL: ${{ secrets.WP_URL }}
         GOOGLE_GSC_KEY_JSON: ${{ secrets.GOOGLE_GSC_KEY_JSON }}
         GSC_SITE_URL: ${{ secrets.GSC_SITE_URL }}
+        OTEL_SDK_DISABLED: true
+        CREWAI_DISABLE_TELEMETRY: true
       run: |
         if [ -n "$GOOGLE_CREDENTIALS_JSON" ]; then
           echo "$GOOGLE_CREDENTIALS_JSON" > /tmp/gcp-sa.json
@@ -49,3 +54,16 @@ jobs:
         fi
         export GOOGLE_GENAI_USE_VERTEXAI=true
         python main.py
+
+    # 把生成的 site/ 提交回仓库 → 可触发 pages.yml 部署
+    - name: Commit static site
+      run: |
+        git config user.name "github-actions[bot]"
+        git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+        git add site/
+        if git diff --staged --quiet; then
+          echo "No site/ changes to commit"
+        else
+          git commit -m "chore: publish SEO static page from Actions"
+          git push
+        fi
