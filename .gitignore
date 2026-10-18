@@ -17,3 +17,6 @@ google-sa.json
 
 # OS
 .DS_Store
+
+# 本地学习素材（learn/file1、file2…）
+learn/file*
