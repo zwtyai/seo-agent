@@ -49,7 +49,6 @@ def _decrypt_secret(ciphertext: str, master_key: str) -> str:
 
 
 def resolve_secret_text(value: str) -> str:
-    """明文原样返回；enc:v1: 用 DOC2DOC_SECRETS_KEY 解密。"""
     raw = (value or "").strip()
     if not raw.startswith(_ENC_PREFIX):
         return raw
