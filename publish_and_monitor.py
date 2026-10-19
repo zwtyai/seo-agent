@@ -90,8 +90,10 @@ def format_gsc_notes(rows: list | None) -> str:
     return "\n".join(lines)
 
 
-def gsc_research_notes() -> str:
-    """有凭证就拉近 7 天查询；没有、为空或失败时返回继续挖词的说明。"""
+def gsc_research_notes(site_url: str | None = None, lookback_days: int = 7) -> str:
+    """有凭证就拉近期查询；没有、为空或失败时返回继续挖词的说明。"""
+    site = (site_url or GSC_SITE_URL).strip()
+    days = lookback_days if lookback_days and lookback_days > 0 else 7
     gsc_json_string = (os.environ.get("GOOGLE_GSC_KEY_JSON") or "").strip()
     if not gsc_json_string:
         print("⚠️ 未配置 GOOGLE_GSC_KEY_JSON，挖词不等待 GSC。")
@@ -110,10 +112,10 @@ def gsc_research_notes() -> str:
         service = build("webmasters", "v3", http=http)
         today = datetime.date.today()
         end_date = (today - datetime.timedelta(days=2)).strftime("%Y-%m-%d")
-        start_date = (today - datetime.timedelta(days=9)).strftime("%Y-%m-%d")
-        print(f"正在拉取 GSC，单次请求最多等 {GSC_HTTP_TIMEOUT_SEC} 秒…")
+        start_date = (today - datetime.timedelta(days=2 + days)).strftime("%Y-%m-%d")
+        print(f"正在拉取 GSC {site}，单次请求最多等 {GSC_HTTP_TIMEOUT_SEC} 秒…")
         response = service.searchanalytics().query(
-            siteUrl=GSC_SITE_URL,
+            siteUrl=site,
             body={
                 "startDate": start_date,
                 "endDate": end_date,

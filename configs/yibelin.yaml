@@ -1,0 +1,168 @@
+# 译比邻 PDF 在线翻译 SEO配置
+
+product:
+  id: "yibelin"
+  name: "译比邻"
+  domain: "https://yibelin.com"
+  description: "专注PDF文档翻译与格式保留的在线工具"
+
+keyword_strategy:
+  seed_keywords:
+    - "PDF 在线翻译"
+    - "PDF 翻译工具"
+  
+  keyword_types:
+    - "问题型"    # 如何/为什么/怎么
+    - "场景型"    # 扫描版/双栏/公式
+  
+  search_volume:
+    min: 200
+    max: 2000
+  
+  keyword_difficulty:
+    max: 30
+  
+  exclusions:
+    - "PDF翻译"
+    - "PDF在线翻译"
+    - "pdf翻译"
+    - "在线翻译"
+
+content_strategy:
+  types:
+    - name: "FAQ型"
+      priority: 1
+    - name: "教程指南型"
+      priority: 2
+    - name: "对比评测型"
+      priority: 3
+    - name: "深度分析型"
+      priority: 4
+    - name: "案例故事型"
+      priority: 5
+  
+  word_count:
+    min: 800
+    max: 1800
+  
+  evidence_requirements:
+    min_urls: 3
+    min_data_points: 1
+  
+  product_mention:
+    max_count: 4
+    position: "ending"
+
+knowledge_base:
+  source: "knowledge_base/yibelin/"
+  main_file: "capabilities.md"
+  
+  mandatory_mentions:
+    - "复杂版式仍需人工核对"
+    - "单文件建议 10MB、20 页以内"
+
+quality_gates:
+  keyword_gate:
+    enabled: true
+    require_question_type: true
+    check_existing_titles: true
+  
+  claim_gate:
+    enabled: true
+    forbidden_hype:
+      - "终极"
+      - "彻底解决"
+      - "彻底告别"
+      - "完美"
+      - "前所未有"
+      - "革命性"
+      - "100%"
+      - "百分百"
+      - "精准还原"
+      - "格式完美"
+      - "从根本上解决"
+      - "从根源上解决"
+    forbidden_disparage:
+      - "垃圾"
+      - "一无是处"
+      - "完全不行"
+      - "远不如"
+      - "一塌糊涂"
+      - "智商税"
+      - "普通工具只"
+      - "传统工具仅"
+      - "其他工具都"
+    forbidden_marketing:
+      - "一站式"
+      - "工作效率倍增"
+      - "数字修复师"
+      - "终结你的"
+      - "开启您的"
+      - "开启你的"
+      - "体验真正"
+      - "无忧"
+      - "经过测试"
+      - "经过我们的测试"
+      - "正如一位用户"
+    max_product_mentions: 4
+
+seo:
+  keyword_density:
+    min: 0.015
+    max: 0.025
+  
+  internal_links:
+    enabled: true
+    anchor_text: "PDF 在线翻译"
+    target_url: "https://yibelin.com"
+  
+  meta:
+    title_max_length: 60
+    description_max_length: 160
+    add_og_tags: true
+    add_twitter_card: true
+  
+  schema:
+    article: true
+    faq: true
+    how_to: true
+
+publishing:
+  output_dir: "docs/"
+  static_site_origin: "https://zwtyai.github.io/seo-agent"
+  
+  wordpress:
+    enabled: false
+    api_url: "${WP_URL}"
+    user: "${WP_USER}"
+    app_password: "${WP_APP_PASSWORD}"
+  
+  github:
+    enabled: true
+    repo: "zwtyai/seo-agent"
+    branch: "main"
+    docs_dir: "docs"
+
+monitoring:
+  gsc:
+    enabled: true
+    site_url: "sc-domain:yibelin.com"
+    lookback_days: 7
+
+agents:
+  researcher:
+    temperature: 0.7
+    use_grounding: true
+    focus_areas:
+      - "用户痛点"
+      - "竞品缺口"
+      - "真实案例"
+  
+  writer:
+    temperature: 0.75
+    style: "professional"
+    avoid_ai_phrases: true
+  
+  editor:
+    temperature: 0.4
+    strictness: "high"
