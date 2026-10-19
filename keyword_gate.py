@@ -47,6 +47,7 @@ def validate_keyword_brief(
     markdown: str,
     seed_keyword: str,
     existing_titles: list[str] | None = None,
+    required_content_type: str | None = None,
 ) -> tuple[bool, str]:
     """检查研究简报里的长尾词是否满足第一步选题条件。"""
     sections = brief_sections(markdown)
@@ -115,6 +116,14 @@ def validate_keyword_brief(
         problems.append("竞品缺口必须附带竞品页面 URL。")
     elif gap_term is None or len(gap_term.group(1).strip()) < 4:
         problems.append("竞品缺口要写一行「缺口词: …」，说明对方在排、本站标题没覆盖的词。")
+
+    if required_content_type:
+        suggested = sections.get("suggested_content_type", "")
+        if required_content_type not in suggested:
+            problems.append(
+                f"## suggested_content_type 必须写「{required_content_type}」。"
+                "这是当前篇数最少的类型，不要改成别的。"
+            )
 
     if problems:
         return False, "选题未通过，请重写研究简报：\n- " + "\n- ".join(problems)

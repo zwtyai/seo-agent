@@ -72,6 +72,25 @@ def test_content_type_inference():
             "FAQ型"
         ),
         (
+            """# 如何处理扫描版PDF里的文字？
+
+## Q: 为什么格式会乱？
+答：...
+
+## Q: 扫描版能翻译吗？
+答：...
+
+## Q: 双栏论文怎么处理？
+答：...
+
+## Q: 价格多少？
+答：...
+
+## Q: 支持哪些语言？
+答：...""",
+            "FAQ型"
+        ),
+        (
             """# 清华博士的论文翻译经历
             
 李博士是清华材料学研究生，导师发来58页德文论文...
@@ -523,6 +542,16 @@ KD: 18
         validate_keyword_brief(bold_gap, "PDF 在线翻译")[0],
     ))
 
+    typed = good + "\n## suggested_content_type\nFAQ型\n"
+    cases.append((
+        "指定类型一致可以通过",
+        validate_keyword_brief(typed, "PDF 在线翻译", required_content_type="FAQ型")[0],
+    ))
+    cases.append((
+        "指定类型被改掉则拒绝",
+        not validate_keyword_brief(good, "PDF 在线翻译", required_content_type="FAQ型")[0],
+    ))
+
     passed = True
     for name, result in cases:
         print(f"  {'✅' if result else '❌'} {name}")
@@ -564,9 +593,45 @@ def test_claim_gate():
     return passed
 
 
-# ============================================================
-# 主函数
-# ============================================================
+def test_content_rotation():
+    """下一篇使用篇数最少的类型，篇数相同按固定顺序。"""
+    from static_publish import least_used_content_type
+
+    print("=" * 60)
+    print("📝 测试 7：内容类型轮换")
+    print("=" * 60)
+
+    cases = [
+        ("没有文章时先写 FAQ", least_used_content_type([]) == "FAQ型"),
+        (
+            "FAQ 还是 0 时继续写 FAQ",
+            least_used_content_type(["深度分析型", "教程指南型"]) == "FAQ型",
+        ),
+        (
+            "篇数相同按 FAQ、教程、对比、案例、深度分析",
+            least_used_content_type(
+                ["FAQ型", "教程指南型", "对比评测型", "案例故事型", "深度分析型"]
+            )
+            == "FAQ型",
+        ),
+        (
+            "其余类型仍是 0 时不跳到教程",
+            least_used_content_type(["FAQ型", "FAQ型", "教程指南型"]) == "对比评测型",
+        ),
+        (
+            "FAQ 更多且其他类型都有时改写教程",
+            least_used_content_type(
+                ["FAQ型", "FAQ型", "教程指南型", "对比评测型", "案例故事型", "深度分析型"]
+            )
+            == "教程指南型",
+        ),
+    ]
+    passed = True
+    for name, result in cases:
+        print(f"  {'✅' if result else '❌'} {name}")
+        passed = passed and result
+    print()
+    return passed
 
 def main():
     """运行所有测试"""
@@ -584,6 +649,7 @@ def main():
     results.append(("研究简报格式", test_research_brief_format()))
     results.append(("关键词选题门槛", test_keyword_gate()))
     results.append(("成稿表述门槛", test_claim_gate()))
+    results.append(("内容类型轮换", test_content_rotation()))
     
     # 汇总结果
     print("=" * 60)

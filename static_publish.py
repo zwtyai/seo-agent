@@ -36,6 +36,24 @@ def _slugify(text: str, max_len: int = 48) -> str:
     return (text or "post")[:max_len]
 
 
+CONTENT_TYPES = (
+    "FAQ型",
+    "教程指南型",
+    "对比评测型",
+    "案例故事型",
+    "深度分析型",
+)
+
+
+def least_used_content_type(published_types: list[str]) -> str:
+    """下一篇用篇数最少的类型。篇数相同按 CONTENT_TYPES 的顺序取。"""
+    counts = {name: 0 for name in CONTENT_TYPES}
+    for name in published_types:
+        if name in counts:
+            counts[name] += 1
+    return min(CONTENT_TYPES, key=lambda name: (counts[name], CONTENT_TYPES.index(name)))
+
+
 def _infer_content_type(markdown: str) -> str:
     """从文章内容推断内容类型。"""
     md = markdown.lower()
@@ -44,7 +62,11 @@ def _infer_content_type(markdown: str) -> str:
         if line.strip().startswith("# "):
             title = line.strip()[2:].lower()
             break
-    
+
+    # FAQ 先认。长尾问句标题常含「如何 / 怎么」，不能因此把 FAQ 算成教程。
+    if md.count("## q:") + md.count("## 问") >= 5:
+        return "FAQ型"
+
     # 对比评测型
     if "|" in markdown and ("对比" in md or "vs" in md or "比较" in md):
         return "对比评测型"
@@ -54,10 +76,6 @@ def _infer_content_type(markdown: str) -> str:
         return "教程指南型"
     if md.count("第一步") + md.count("第二步") + md.count("步骤") >= 3:
         return "教程指南型"
-    
-    # FAQ型
-    if md.count("## q:") + md.count("## 问") >= 5:
-        return "FAQ型"
     
     # 案例故事型
     if any(kw in md for kw in ["故事", "案例", "经历", "博士", "研究生", "用户"]):
