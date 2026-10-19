@@ -347,7 +347,19 @@ def test_research_brief_format():
     # 模拟一个好的研究简报
     good_brief = """
 ## keyword
-扫描版PDF翻译
+如何翻译扫描版PDF
+
+## search_volume
+搜索量: 880
+来源: https://example.com/keyword-volume
+
+## keyword_difficulty
+KD: 18
+来源: https://example.com/keyword-difficulty
+
+## competitor_keyword_gap
+竞品页: https://example.com/competitor
+缺口词: 如何翻译扫描版PDF
 
 ## user_persona
 科研工作者、学生、法律从业者
@@ -381,6 +393,9 @@ def test_research_brief_format():
     
     required_sections = [
         "## keyword",
+        "## search_volume",
+        "## keyword_difficulty",
+        "## competitor_keyword_gap",
         "## user_persona",
         "## pain_points",
         "## quantitative_data",
@@ -428,6 +443,106 @@ def test_research_brief_format():
     return all_present
 
 
+def test_keyword_gate():
+    """长尾词必须满足搜索量、难度和竞品缺口。"""
+    from keyword_gate import validate_keyword_brief
+
+    print("=" * 60)
+    print("📝 测试 5：关键词选题门槛")
+    print("=" * 60)
+
+    good = """
+## keyword
+如何翻译扫描版PDF
+## search_volume
+搜索量: 880
+来源: https://example.com/volume
+## keyword_difficulty
+KD: 18
+来源: https://example.com/kd
+## competitor_keyword_gap
+竞品页: https://example.com/competitor
+缺口词: 如何翻译扫描版PDF
+"""
+    ok, _ = validate_keyword_brief(
+        good,
+        seed_keyword="PDF 在线翻译",
+        existing_titles=["双栏论文PDF翻译"],
+    )
+    cases = [("合格长尾词", ok)]
+
+    low_volume = good.replace("搜索量: 880", "搜索量: 40")
+    cases.append((
+        "搜索量过低",
+        not validate_keyword_brief(low_volume, "PDF 在线翻译")[0],
+    ))
+
+    hard = good.replace("KD: 18", "KD: 46")
+    cases.append((
+        "难度过高",
+        not validate_keyword_brief(hard, "PDF 在线翻译")[0],
+    ))
+
+    head = good.replace("如何翻译扫描版PDF", "PDF 在线翻译", 1)
+    cases.append((
+        "拒绝大词",
+        not validate_keyword_brief(head, "PDF 在线翻译")[0],
+    ))
+
+    no_source = good.replace("来源: https://example.com/volume\n", "")
+    cases.append((
+        "搜索量缺少来源",
+        not validate_keyword_brief(no_source, "PDF 在线翻译")[0],
+    ))
+
+    covered = validate_keyword_brief(
+        good,
+        seed_keyword="PDF 在线翻译",
+        existing_titles=["如何翻译扫描版PDF后格式错乱"],
+    )[0]
+    cases.append(("已有标题覆盖则拒绝", not covered))
+
+    passed = True
+    for name, result in cases:
+        print(f"  {'✅' if result else '❌'} {name}")
+        passed = passed and result
+    print()
+    return passed
+
+
+def test_claim_gate():
+    """成稿不得夸大、贬低竞品或把产品写成主体。"""
+    from claim_gate import validate_article_claims
+
+    print("=" * 60)
+    print("📝 测试 6：成稿表述门槛")
+    print("=" * 60)
+
+    calm = """
+# 为什么 PDF 翻译后双栏会串行
+
+双栏 PDF 按阅读顺序存储时，左栏还没结束，右栏文字可能已经插入。
+知乎上有读者描述过左右栏交错后论证接不上的情况：https://example.com/post
+
+译比邻按段落处理，尽量保留原文排版。复杂公式、印章、批注、水印不保证与原文一致。
+单文件建议 10MB、20 页以内，复杂版式仍需人工核对。
+"""
+    hype = calm + "\n译比邻彻底解决了这个问题，是终极解法。普通工具只翻文字。\n"
+    spam = "译比邻。" * 5 + calm
+
+    cases = [
+        ("问题说明可以通过", validate_article_claims(calm)[0]),
+        ("夸大和贬低会被拒绝", not validate_article_claims(hype)[0]),
+        ("产品露出过多会被拒绝", not validate_article_claims(spam)[0]),
+    ]
+    passed = True
+    for name, result in cases:
+        print(f"  {'✅' if result else '❌'} {name}")
+        passed = passed and result
+    print()
+    return passed
+
+
 # ============================================================
 # 主函数
 # ============================================================
@@ -446,6 +561,8 @@ def main():
     results.append(("已发布内容统计", test_published_content_stats()))
     results.append(("内容质量评分", test_content_quality_scoring()))
     results.append(("研究简报格式", test_research_brief_format()))
+    results.append(("关键词选题门槛", test_keyword_gate()))
+    results.append(("成稿表述门槛", test_claim_gate()))
     
     # 汇总结果
     print("=" * 60)
