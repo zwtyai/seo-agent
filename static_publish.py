@@ -4,15 +4,18 @@
 
 from __future__ import annotations
 
+import json
 import re
 from datetime import datetime, timezone
 from html import escape
 from pathlib import Path
 from typing import Any, Optional
+from urllib.parse import quote
 
 _REPO_ROOT = Path(__file__).resolve().parent
 # GitHub Pages「从分支部署」只支持 / 或 /docs，故静态站落在 docs/
 _DEFAULT_SITE_DIR = _REPO_ROOT / "docs"
+SITE_ORIGIN = "https://zwtyai.github.io/seo-agent"
 
 _TITLE_TAG_RE = re.compile(r"<title>(.*?)</title>", re.IGNORECASE | re.DOTALL)
 _H1_TAG_RE = re.compile(r"<h1[^>]*>(.*?)</h1>", re.IGNORECASE | re.DOTALL)
@@ -204,14 +207,79 @@ def _markdown_to_html_body(markdown: str) -> str:
         return "<pre class=\"md-fallback\">" + escape(markdown) + "</pre>"
 
 
-def _page_shell(title: str, body_html: str, *, relative_css: str = "../assets/style.css") -> str:
-    safe_title = escape(title)
+def _clip(text: str, limit: int) -> str:
+    text = re.sub(r"\s+", " ", text).strip()
+    if len(text) <= limit:
+        return text
+    return text[: limit - 1].rstrip() + "…"
+
+
+def _meta_description(markdown: str) -> str:
+    text = re.sub(r"(?m)^#+\s*", "", markdown or "")
+    text = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", text)
+    text = re.sub(r"[*_`>#|]", "", text)
+    return _clip(text, 160) or "译比邻 PDF 在线翻译"
+
+
+def _post_url(filename: str) -> str:
+    return f"{SITE_ORIGIN}/posts/{quote(filename)}"
+
+
+def _lastmod_from_name(filename: str, path: Path) -> str:
+    match = re.match(r"(\d{8})-", filename)
+    if match:
+        return datetime.strptime(match.group(1), "%Y%m%d").date().isoformat()
+    return datetime.fromtimestamp(path.stat().st_mtime, timezone.utc).date().isoformat()
+
+
+def _json_ld(title: str, description: str, canonical: str, published: str) -> str:
+    payload = {
+        "@context": "https://schema.org",
+        "@type": "Article",
+        "headline": _clip(title, 110),
+        "description": description,
+        "inLanguage": "zh-CN",
+        "mainEntityOfPage": canonical,
+        "datePublished": published,
+        "author": {
+            "@type": "Organization",
+            "name": "译比邻",
+            "url": "https://yibelin.com",
+        },
+    }
+    return json.dumps(payload, ensure_ascii=False).replace("<", "\\u003c")
+
+
+def _page_shell(
+    title: str,
+    body_html: str,
+    *,
+    description: str,
+    canonical: str,
+    published: str,
+    relative_css: str = "../assets/style.css",
+) -> str:
+    safe_title = escape(_clip(title, 60))
+    safe_description = escape(description)
+    safe_canonical = escape(canonical)
+    linked_data = _json_ld(title, description, canonical, published)
     return f"""<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>{safe_title}</title>
+  <meta name="description" content="{safe_description}" />
+  <link rel="canonical" href="{safe_canonical}" />
+  <meta property="og:type" content="article" />
+  <meta property="og:locale" content="zh_CN" />
+  <meta property="og:title" content="{safe_title}" />
+  <meta property="og:description" content="{safe_description}" />
+  <meta property="og:url" content="{safe_canonical}" />
+  <meta name="twitter:card" content="summary" />
+  <meta name="twitter:title" content="{safe_title}" />
+  <meta name="twitter:description" content="{safe_description}" />
+  <script type="application/ld+json">{linked_data}</script>
   <link rel="stylesheet" href="{relative_css}" />
 </head>
 <body>
@@ -231,6 +299,40 @@ def _page_shell(title: str, body_html: str, *, relative_css: str = "../assets/st
 """
 
 
+def _write_crawl_files(site_dir: Path) -> None:
+    posts_dir = site_dir / "posts"
+    urls = [
+        "  <url>\n"
+        f"    <loc>{escape(SITE_ORIGIN + '/')}</loc>\n"
+        "  </url>"
+    ]
+    if posts_dir.is_dir():
+        for path in sorted(posts_dir.glob("*.html")):
+            if path.name.startswith("_"):
+                continue
+            lastmod = _lastmod_from_name(path.name, path)
+            loc = escape(_post_url(path.name))
+            urls.append(
+                "  <url>\n"
+                f"    <loc>{loc}</loc>\n"
+                f"    <lastmod>{lastmod}</lastmod>\n"
+                "  </url>"
+            )
+    sitemap = (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
+        + "\n".join(urls)
+        + "\n</urlset>\n"
+    )
+    (site_dir / "sitemap.xml").write_text(sitemap, encoding="utf-8")
+    (site_dir / "robots.txt").write_text(
+        "User-agent: *\n"
+        "Allow: /\n\n"
+        f"Sitemap: {SITE_ORIGIN}/sitemap.xml\n",
+        encoding="utf-8",
+    )
+
+
 def _rebuild_index(site_dir: Path) -> Path:
     posts_dir = site_dir / "posts"
     posts = sorted(posts_dir.glob("*.html"), reverse=True)
@@ -246,12 +348,18 @@ def _rebuild_index(site_dir: Path) -> Path:
         items.append(f'      <li><a href="posts/{escape(p.name)}">{escape(label)}</a></li>')
 
     listing = "\n".join(items) if items else "      <li>（暂无文章）</li>"
+    index_url = escape(SITE_ORIGIN + "/")
     html = f"""<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>SEO Agent 静态站</title>
+  <meta name="description" content="译比邻 PDF 在线翻译相关文章列表" />
+  <link rel="canonical" href="{index_url}" />
+  <meta property="og:title" content="SEO Agent 静态站" />
+  <meta property="og:description" content="译比邻 PDF 在线翻译相关文章列表" />
+  <meta property="og:url" content="{index_url}" />
   <link rel="stylesheet" href="assets/style.css" />
 </head>
 <body>
@@ -272,6 +380,7 @@ def _rebuild_index(site_dir: Path) -> Path:
 """
     index_path = site_dir / "index.html"
     index_path.write_text(html, encoding="utf-8")
+    _write_crawl_files(site_dir)
     return index_path
 
 
@@ -304,11 +413,21 @@ def publish_static_page(
         markdown = _replace_markdown_h1(markdown, title)
 
     body = _markdown_to_html_body(markdown)
-    stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+    now = datetime.now(timezone.utc).replace(microsecond=0)
+    stamp = now.strftime("%Y%m%d-%H%M%S")
     slug = _slugify(title) or _slugify(seed_keyword)
     filename = f"{stamp}-{slug}.html"
     out_path = posts_dir / filename
-    out_path.write_text(_page_shell(title, body), encoding="utf-8")
+    out_path.write_text(
+        _page_shell(
+            title,
+            body,
+            description=_meta_description(markdown),
+            canonical=_post_url(filename),
+            published=now.isoformat(),
+        ),
+        encoding="utf-8",
+    )
 
     # 同步保存原始 Markdown，方便 diff / 再加工
     md_path = posts_dir / f"{stamp}-{slug}.md"
