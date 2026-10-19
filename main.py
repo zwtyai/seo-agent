@@ -477,7 +477,7 @@ def main():
     parser = argparse.ArgumentParser(description="多产品 SEO 自动化工厂")
     parser.add_argument(
         "--product",
-        required=True,
+        default=None,
         help="产品ID，如 yibelin, tranzify, toolnav"
     )
     parser.add_argument(
@@ -501,6 +501,8 @@ def main():
         for p in products:
             print(f"  - {p}")
         return
+    if not args.product:
+        parser.error("需要 --product，例如 yibelin")
     
     # 1. 加载产品配置
     try:
@@ -511,7 +513,7 @@ def main():
         from core.config import list_available_products
         for p in list_available_products():
             print(f"  - {p}")
-        return
+        raise SystemExit(1)
     
     print(f"🎯 产品: {config.name}")
     print(f"🌐 域名: {config.domain}")
@@ -527,7 +529,7 @@ def main():
         print("✅ Vertex AI Gemini 已就绪\n")
     except Exception as e:
         print(f"❌ LLM 初始化失败: {_redact_secrets(str(e))}")
-        return
+        raise SystemExit(1)
     
     # 3. 创建核心组件
     kb_loader = KnowledgeBaseLoader(config)
@@ -549,10 +551,12 @@ def main():
         print(f"\n🎉 [{config.name}] {args.step} 步骤完成！")
     except FileNotFoundError as e:
         print(f"❌ {e}")
+        raise SystemExit(1)
     except Exception as e:
         print(f"❌ 运行异常: {_redact_secrets(str(e))}")
         import traceback
         traceback.print_exc()
+        raise SystemExit(1)
 
 
 if __name__ == "__main__":
