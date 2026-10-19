@@ -5,6 +5,9 @@ from crewai import Agent, Crew, Process, Task
 from crewai.tools import tool
 
 from static_publish import (
+    CONTENT_TYPES,
+    _infer_content_type,
+    least_used_content_type,
     list_published_titles,
     list_published_content_types,
     publish_static_page,
@@ -183,18 +186,45 @@ seo_editor = Agent(
 # 4. Tasks
 # =====================================================================
 
+def _required_content_type() -> str:
+    return least_used_content_type(list_published_content_types())
+
+
+def _content_type_in_brief() -> str:
+    path = _step_path("keyword")
+    if path.is_file():
+        suggested = brief_sections(path.read_text(encoding="utf-8")).get(
+            "suggested_content_type", ""
+        )
+        for name in CONTENT_TYPES:
+            if name in suggested:
+                return name
+    return _required_content_type()
+
+
 def _keyword_guardrail(output) -> tuple[bool, str]:
     text = getattr(output, "raw", None) or str(output)
     return validate_keyword_brief(
         text,
         seed_keyword=SEED_KEYWORD,
         existing_titles=list_published_titles(),
+        required_content_type=_required_content_type(),
     )
 
 
 def _claim_guardrail(output) -> tuple[bool, str]:
     text = getattr(output, "raw", None) or str(output)
-    return validate_article_claims(text)
+    ok, message = validate_article_claims(text)
+    if not ok:
+        return ok, message
+    expected = _content_type_in_brief()
+    actual = _infer_content_type(text)
+    if actual != expected:
+        hint = ""
+        if expected == "FAQ型":
+            hint = " FAQ 至少写 5 个「## Q: 问题？」标题。"
+        return False, f"成稿类型必须是{expected}，当前识别为{actual}。{hint}"
+    return True, text
 
 
 research_task = Task(
@@ -235,13 +265,9 @@ research_task = Task(
        - 找到其他翻译工具的差评或局限性
        - 具体说明它们在哪个环节失败
     
-    5. **内容类型建议**：
-       根据素材特点，建议最适合的内容类型：
-       - 深度分析型（有大量证据和数据）
-       - 对比评测型（有多个工具对比）
-       - 教程指南型（痛点有明确解决步骤）
-       - FAQ型（用户疑问集中）
-       - 案例故事型（有生动的用户故事）
+    5. **内容类型**：本篇必须是 {preferred_content_type}。
+       ## suggested_content_type 只写这个类型，不要因为素材像分析就改成别的。
+       若是 FAQ型，正文稍后会要求至少 5 个「## Q:」标题。
 
     【禁止】无联网依据时凭空编造数据和URL。
     
@@ -260,7 +286,7 @@ research_task = Task(
     ## unique_angle（本篇独特角度，30字内说明与已有文章的差异）""",
     expected_output=(
         "Markdown 研究简报：1 个问题型长尾词；搜索量和 KD 要么是带来源的合格数字，"
-        "要么写明未找到公开数据；另有竞品缺口词、痛点和至少 3 个证据 URL。"
+        "要么写明未找到公开数据；内容类型必须是指定的那一种；另有竞品缺口词和至少 3 个证据 URL。"
     ),
     agent=keyword_researcher,
     guardrail=_keyword_guardrail,
@@ -278,7 +304,7 @@ write_task = Task(
     {existing_titles}
 
     【内容类型要求】
-    根据研究员建议的 suggested_content_type，选择对应模板：
+    本篇必须使用 {preferred_content_type}。只套这一种模板，不要改成深度分析或其他类型。
     
     **模板A：深度分析型（1200-1800字）**
     结构：问题场景 → 问题为何发生（含量化数据和 URL）→ 表现与影响 →
@@ -296,9 +322,9 @@ write_task = Task(
     特点：步骤针对问题本身
     
     **模板D：FAQ型（800-1200字）**
-    结构：引入这个问题 → 若干 Q&A（H2 格式：## Q: 问题？，答案先解释问题）→
+    结构：引入这个问题 → 至少 5 个 Q&A（每个都是一行 H2：## Q: 问题？，答案先解释问题）→
           文末一段产品能力（只复述知识库，并写限制）
-    特点：每个答案独立可读，先回答问题
+    特点：每个答案独立可读。少于 5 个「## Q:」不会被算成 FAQ。
     
     **模板E：案例故事型（1000-1500字）**
     结构：复述简报中带 URL 的抱怨 → 这个场景里问题如何发生 →
@@ -399,6 +425,7 @@ edit_task = Task(
        - 主体是否在解释这个问题为何发生、表现是什么？
        - 「译比邻」是否只在文末出现，且全文不超过 4 次？
        - 产品句子是否只复述知识库，并写了复杂版式仍需人工核对？
+       - 内容类型是否仍是简报指定的那一种？FAQ 要保留至少 5 个「## Q:」标题。
     
     【改写动作】
     - 夸大句改成问题机制，或改成知识库原话
@@ -435,8 +462,11 @@ def _factory_inputs() -> dict:
         type_stats[content_type] = type_stats.get(content_type, 0) + 1
     print(f"📚 已有文章 {len(existing)} 篇（用于选题/标题去重）")
     print(f"📊 内容类型分布：{type_stats}")
+    preferred = least_used_content_type(existing_types)
+    print(f"📎 本篇指定类型：{preferred}")
     return {
         "seed_keyword": SEED_KEYWORD,
+        "preferred_content_type": preferred,
         "existing_titles": (
             "\n".join(f"- {title}" for title in existing)
             if existing
