@@ -14,6 +14,7 @@ from static_publish import (
 )
 from claim_gate import validate_article_claims
 from keyword_gate import brief_sections, validate_keyword_brief
+from publish_and_monitor import gsc_research_notes
 from vertex_llm import (
     build_gemini_llm,
     configure_vertex_env,
@@ -235,6 +236,12 @@ research_task = Task(
 
     【已有内容类型】
     {existing_content_types}
+
+    【GSC 近况】
+    {gsc_notes}
+
+    上面若列出了可优先写的查询，本篇问句优先贴近其中一条，并且避开已有标题。
+    上面若写的是没有数据，就按种子词继续挖一个新的问题型长尾。两种情况都要交出简报，不要等待 GSC。
 
     选词门槛（写进简报；禁止编造数字）：
     1. **问题型长尾词**：## keyword 只写 1 个问句，不能是种子大词「{seed_keyword}」
@@ -528,7 +535,12 @@ def _kickoff(agents: list, tasks: list, inputs: dict) -> str:
 
 def run_keyword() -> str:
     print("只跑关键词提取：种子词 → 长尾词简报。不写正文、不发布。")
-    text = _kickoff([keyword_researcher], [research_task], _factory_inputs())
+    notes = gsc_research_notes()
+    text = _kickoff(
+        [keyword_researcher],
+        [research_task],
+        {**_factory_inputs(), "gsc_notes": notes},
+    )
     path = _save_step("keyword", text)
     _show_step("keyword", path, text)
     print("下一步只读这个文件：python main.py --step write")

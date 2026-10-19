@@ -48,6 +48,17 @@ def _decrypt_secret(ciphertext: str, master_key: str) -> str:
     return _fernet(master_key).decrypt(raw.encode("ascii")).decode("utf-8")
 
 
+def resolve_secret_text(value: str) -> str:
+    """明文原样返回；enc:v1: 用 DOC2DOC_SECRETS_KEY 解密。"""
+    raw = (value or "").strip()
+    if not raw.startswith(_ENC_PREFIX):
+        return raw
+    master = (os.getenv("DOC2DOC_SECRETS_KEY") or "").strip()
+    if not master:
+        raise ValueError("加密凭证需要 DOC2DOC_SECRETS_KEY")
+    return _decrypt_secret(raw, master)
+
+
 def _resolve_credentials_path() -> str:
     """解析服务账号 JSON 路径，逻辑对齐 doc2doc GeminiTranslator._load_credentials_path。"""
     enc = (os.getenv("GOOGLE_CREDENTIALS_ENC") or "").strip()

@@ -14,6 +14,7 @@ venv/
 project-*.json
 *-credentials.json
 google-sa.json
+google-search-console.json
 
 # OS
 .DS_Store

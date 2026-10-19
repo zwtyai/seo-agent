@@ -665,6 +665,63 @@ def test_page_seo():
     return passed
 
 
+def test_gsc_secret_roundtrip():
+    """GSC 凭证可以是 enc:v1 密文，明文 JSON 仍然直接可用。"""
+    import os
+
+    from vertex_llm import _ENC_PREFIX, _fernet, resolve_secret_text
+
+    print("=" * 60)
+    print("📝 测试 10：GSC 凭证加密")
+    print("=" * 60)
+
+    previous = os.environ.get("DOC2DOC_SECRETS_KEY")
+    os.environ["DOC2DOC_SECRETS_KEY"] = "test-pass"
+    token = _fernet("test-pass").encrypt(b'{"type":"service_account"}').decode()
+    try:
+        cases = [
+            ("密文能解开", resolve_secret_text(_ENC_PREFIX + token) == '{"type":"service_account"}'),
+            ("明文原样返回", resolve_secret_text('{"a":1}') == '{"a":1}'),
+        ]
+    finally:
+        if previous is None:
+            os.environ.pop("DOC2DOC_SECRETS_KEY", None)
+        else:
+            os.environ["DOC2DOC_SECRETS_KEY"] = previous
+    passed = True
+    for name, result in cases:
+        print(f"  {'✅' if result else '❌'} {name}")
+        passed = passed and result
+    print()
+    return passed
+
+
+def test_gsc_notes():
+    """GSC 没数据时继续挖词；有曝光或中间排名时标成优先查询。"""
+    from publish_and_monitor import NO_GSC_NOTES, format_gsc_notes
+
+    print("=" * 60)
+    print("📝 测试 9：GSC 不阻塞挖词")
+    print("=" * 60)
+
+    empty = format_gsc_notes([])
+    ranked = format_gsc_notes([
+        {"keys": ["pdf 翻译 排版"], "clicks": 0, "impressions": 12, "ctr": 0.0, "position": 14.2},
+        {"keys": ["译比邻"], "clicks": 8, "impressions": 20, "ctr": 0.4, "position": 2.0},
+    ])
+    cases = [
+        ("没有查询就继续写新词", "不要等待" in empty and empty == NO_GSC_NOTES),
+        ("有曝光且排名 8–20 的查询被标为优先", "pdf 翻译 排版" in ranked and "可优先写的查询" in ranked),
+        ("排名靠前且点击不弱的查询不进优先名单", "可优先写的查询" in ranked and "译比邻" not in ranked.split("可优先写的查询", 1)[1]),
+    ]
+    passed = True
+    for name, result in cases:
+        print(f"  {'✅' if result else '❌'} {name}")
+        passed = passed and result
+    print()
+    return passed
+
+
 def main():
     """运行所有测试"""
     print("\n" + "=" * 60)
@@ -683,6 +740,8 @@ def main():
     results.append(("成稿表述门槛", test_claim_gate()))
     results.append(("内容类型轮换", test_content_rotation()))
     results.append(("发布页技术 SEO", test_page_seo()))
+    results.append(("GSC 不阻塞挖词", test_gsc_notes()))
+    results.append(("GSC 凭证加密", test_gsc_secret_roundtrip()))
     
     # 汇总结果
     print("=" * 60)
