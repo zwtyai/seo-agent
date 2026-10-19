@@ -1,0 +1,156 @@
+# 产品SEO配置模板
+# 用法: 复制为 configs/<product>.yaml 并修改
+
+# ============ 基础信息 ============
+product:
+  id: "yibelin"                      # 产品标识
+  name: "译比邻 PDF 在线翻译"
+  domain: "https://yibelin.com"
+  description: "专注PDF文档翻译与格式保留"
+
+# ============ 关键词策略 ============
+keyword_strategy:
+  seed_keywords:                     # 种子关键词（可多个）
+    - "PDF 在线翻译"
+    - "PDF 翻译工具"
+  
+  keyword_types:                     # 关键词类型偏好
+    - "问题型"                       # 如何/为什么/怎么
+    - "场景型"                       # 扫描版/双栏/公式
+  
+  search_volume:                     # 搜索量区间
+    min: 200
+    max: 2000
+  
+  keyword_difficulty:                # 难度上限
+    max: 30
+  
+  exclusions:                        # 排除词（大词/品牌词）
+    - "PDF翻译"                      # 太宽泛
+    - "在线翻译"                     # 太宽泛
+
+# ============ 内容策略 ============
+content_strategy:
+  types:                             # 内容类型（按优先级）
+    - name: "FAQ型"
+      priority: 1
+      min_questions: 5
+    - name: "教程指南型"
+      priority: 2
+    - name: "对比评测型"
+      priority: 3
+    - name: "深度分析型"
+      priority: 4
+    - name: "案例故事型"
+      priority: 5
+  
+  word_count:                        # 字数区间
+    min: 800
+    max: 1800
+  
+  evidence_requirements:             # 证据要求
+    min_urls: 3                      # 最少真实URL数
+    min_data_points: 1               # 最少量化数据
+  
+  product_mention:                   # 产品提及规则
+    max_count: 4                     # 全文最多次数
+    position: "ending"               # 位置：ending/distributed
+
+# ============ 产品知识库 ============
+knowledge_base:
+  source: "knowledge_base/yibelin/"  # 知识库目录
+  main_file: "capabilities.md"       # 主能力文件
+  
+  mandatory_mentions:                # 必须提及的点
+    - "复杂版式仍需人工核对"
+    - "单文件建议 10MB、20 页以内"
+
+# ============ 质量门槛 ============
+quality_gates:
+  keyword_gate:                      # 选题门槛
+    enabled: true
+    require_question_type: true      # 必须问题型
+    check_existing_titles: true      # 检查标题重复
+  
+  claim_gate:                        # 成稿门槛
+    enabled: true
+    forbidden_hype:                  # 禁止夸大
+      - "终极"
+      - "彻底解决"
+      - "完美"
+      - "100%"
+    forbidden_disparage:             # 禁止贬低
+      - "垃圾"
+      - "一无是处"
+    forbidden_marketing:             # 禁止营销话术
+      - "一站式"
+      - "工作效率倍增"
+    max_product_mentions: 4
+
+# ============ SEO配置 ============
+seo:
+  keyword_density:                   # 关键词密度
+    min: 0.015                       # 1.5%
+    max: 0.025                       # 2.5%
+  
+  internal_links:                    # 内链策略
+    enabled: true
+    anchor_text: "PDF 在线翻译"
+    target_url: "https://yibelin.com"
+  
+  meta:                              # Meta配置
+    title_max_length: 60
+    description_max_length: 160
+    add_og_tags: true
+    add_twitter_card: true
+  
+  schema:                            # 结构化数据
+    article: true
+    faq: true                        # FAQ型文章
+    how_to: true                     # 教程型文章
+
+# ============ 发布配置 ============
+publishing:
+  output_dir: "outputs/yibelin/docs/"
+  static_site_origin: "https://zwtyai.github.io/yibelin-seo"
+  
+  wordpress:                         # 可选：WordPress发布
+    enabled: false
+    api_url: "${WP_URL}"
+    user: "${WP_USER}"
+    app_password: "${WP_APP_PASSWORD}"
+  
+  github:                            # GitHub Pages发布
+    enabled: true
+    repo: "zwtyai/yibelin-seo"
+    branch: "main"
+    docs_dir: "docs"
+
+# ============ 监控配置 ============
+monitoring:
+  gsc:                               # Google Search Console
+    enabled: true
+    site_url: "sc-domain:yibelin.com"
+    lookback_days: 7
+  
+  wordpress_analytics:
+    enabled: false
+
+# ============ Agent配置 ============
+agents:
+  researcher:
+    temperature: 0.7
+    use_grounding: true              # 使用Google Search Grounding
+    focus_areas:                     # 研究重点
+      - "用户痛点"
+      - "竞品缺口"
+      - "真实案例"
+  
+  writer:
+    temperature: 0.75
+    style: "professional"            # professional/casual/technical
+    avoid_ai_phrases: true           # 避免AI套话
+  
+  editor:
+    temperature: 0.4
+    strictness: "high"               # high/medium/low

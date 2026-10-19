@@ -1,0 +1,89 @@
+# Tranzify PDF翻译工具 SEO配置
+
+product:
+  id: "tranzify"
+  name: "Tranzify - 智能PDF翻译"
+  domain: "https://tranzify.cn"
+  description: "AI驱动的PDF文档翻译服务"
+
+keyword_strategy:
+  seed_keywords:
+    - "PDF翻译"
+    - "文档翻译"
+    - "论文翻译"
+  
+  keyword_types:
+    - "问题型"
+    - "工具推荐型"              # 如：最好的PDF翻译工具
+  
+  search_volume:
+    min: 200
+    max: 3000                    # 可以稍高，新品牌需要流量
+  
+  keyword_difficulty:
+    max: 35
+  
+  exclusions:
+    - "在线翻译"                 # 太宽泛
+    - "翻译软件"                 # 太宽泛
+
+content_strategy:
+  types:
+    - name: "对比评测型"         # 与竞品对比
+      priority: 1
+    - name: "教程指南型"
+      priority: 2
+    - name: "FAQ型"
+      priority: 3
+    - name: "深度分析型"
+      priority: 4
+    - name: "案例故事型"
+      priority: 5
+  
+  word_count:
+    min: 1000
+    max: 2000
+  
+  product_mention:
+    max_count: 5                 # 新品牌可以多提
+    position: "distributed"      # 分散在文中
+
+knowledge_base:
+  source: "knowledge_base/tranzify/"
+  main_file: "features.md"
+
+quality_gates:
+  keyword_gate:
+    enabled: true
+    require_question_type: false  # 允许"XX工具推荐"类
+    check_existing_titles: true
+  
+  claim_gate:
+    enabled: true
+    max_product_mentions: 5
+
+seo:
+  keyword_density:
+    min: 0.018
+    max: 0.028
+  
+  internal_links:
+    enabled: true
+    anchor_text: "Tranzify PDF翻译"
+    target_url: "https://tranzify.cn"
+
+publishing:
+  output_dir: "outputs/tranzify/docs/"
+  static_site_origin: "https://seo.tranzify.cn"
+  
+  github:
+    enabled: true
+    repo: "your-org/tranzify-seo"
+    branch: "main"
+    docs_dir: "docs"
+
+monitoring:
+  gsc:
+    enabled: true
+    site_url: "sc-domain:tranzify.cn"
+    lookback_days: 7
