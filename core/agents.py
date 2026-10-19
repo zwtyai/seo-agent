@@ -194,7 +194,7 @@ class AgentFactory:
         
         @tool(f"{config.id}_knowledge_base")
         def product_knowledge_base_tool(query: str) -> str:
-            f"""返回{config.name}已确认的产品能力。正文只能复述这些句子，不能加码，也不能拿来贬低其他工具。"""
+            """返回已确认的产品能力。正文只能复述这些句子，不能加码，也不能拿来贬低其他工具。"""
             mandatory = "\n".join(f"- {m}" for m in config.knowledge_base_mandatory_mentions)
             return (
                 f"【{config.name}产品能力（只许复述，不许加码，不许拿来对比贬低）】：\n"
@@ -239,7 +239,7 @@ class AgentFactory:
         
         @tool(f"{config.id}_placeholder")
         def placeholder_tool(query: str) -> str:
-            f"""【占位】{config.name}知识库工具"""
+            """返回尚未填写的产品知识库占位内容。"""
             return placeholder_msg
         
         return placeholder_tool
