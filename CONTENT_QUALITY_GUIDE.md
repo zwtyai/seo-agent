@@ -29,8 +29,8 @@
 **输出格式：**
 ```markdown
 ## keyword
-## search_volume（搜索量 200-2000，附来源 URL）
-## keyword_difficulty（KD < 30，附来源 URL）
+## search_volume（有公开数字则 200-2000 并附来源 URL；没有则写「搜索量: 未找到公开数据」）
+## keyword_difficulty（有公开数字则 KD < 30 并附来源 URL；没有则写「KD: 未找到公开数据」）
 ## competitor_keyword_gap（竞品页面 URL + 缺口词）
 ## user_persona
 ## pain_points（含量化数据）

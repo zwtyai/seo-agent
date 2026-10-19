@@ -1,4 +1,5 @@
 import re
+from pathlib import Path
 
 from crewai import Agent, Crew, Process, Task
 from crewai.tools import tool
@@ -9,7 +10,7 @@ from static_publish import (
     publish_static_page,
 )
 from claim_gate import validate_article_claims
-from keyword_gate import validate_keyword_brief
+from keyword_gate import brief_sections, validate_keyword_brief
 from vertex_llm import (
     build_gemini_llm,
     configure_vertex_env,
@@ -17,6 +18,12 @@ from vertex_llm import (
 )
 
 SEED_KEYWORD = "PDF 在线翻译"
+RUN_DIR = Path(__file__).resolve().parent / "runs" / "latest"
+STEP_FILES = {
+    "keyword": "01-keyword.md",
+    "write": "02-draft.md",
+    "edit": "03-final.md",
+}
 
 
 def _redact_secrets(text: str) -> str:
@@ -103,8 +110,8 @@ keyword_researcher = Agent(
     role="资深 SEO 关键词研究员 (Keyword Researcher)",
     goal=(
         "借助 Google Search Grounding，为 {seed_keyword} 选出 **1 个问题型长尾词**；"
-        "搜索量必须落在 200-2000，KD 必须低于 30，并且是竞品有排名、已有标题没覆盖的词；"
-        "搜索量和 KD 都要有公开来源 URL，禁止编造"
+        "有公开数字时搜索量要在 200-2000、KD 要低于 30，并附来源 URL；"
+        "公开结果里没有这两个数就写「未找到公开数据」，禁止编造"
     ),
     backstory="""你是一位数据驱动的 SEO 研究专家，接入了 Gemini 的 Google Search Grounding。
 
@@ -199,11 +206,13 @@ research_task = Task(
     【已有内容类型】
     {existing_content_types}
 
-    选词门槛（写进简报，缺一不可；找不到公开来源就换词，禁止编造数字）：
+    选词门槛（写进简报；禁止编造数字）：
     1. **问题型长尾词**：## keyword 只写 1 个问句，不能是种子大词「{seed_keyword}」
-    2. **搜索量 200-2000**：## search_volume 写「搜索量: 数字」和来源 URL
-    3. **KD < 30**：## keyword_difficulty 写「KD: 数字」和来源 URL
-    4. **竞品缺口**：## competitor_keyword_gap 写竞品页面 URL，以及「缺口词: …」
+    2. **搜索量**：找到公开来源就写「搜索量: 数字」和 URL，数字须在 200-2000。
+       公开结果里没有，就只写一行「搜索量: 未找到公开数据」，不要为此换掉合适的问句。
+    3. **KD**：找到就写「KD: 数字」和 URL，须低于 30。
+       没有就只写一行「KD: 未找到公开数据」。
+    4. **竞品缺口**：## competitor_keyword_gap 写竞品页面 URL，以及一行「缺口词: …」
        （对方在排、已有标题没覆盖的那个词）
 
     核心要求：
@@ -250,8 +259,8 @@ research_task = Task(
     ## suggested_h1（独特标题草案）
     ## unique_angle（本篇独特角度，30字内说明与已有文章的差异）""",
     expected_output=(
-        "Markdown 研究简报：1 个问题型长尾词，搜索量 200-2000 且带来源 URL，"
-        "KD<30 且带来源 URL，竞品缺口词与页面 URL，以及痛点、量化数据和至少 3 个证据 URL。"
+        "Markdown 研究简报：1 个问题型长尾词；搜索量和 KD 要么是带来源的合格数字，"
+        "要么写明未找到公开数据；另有竞品缺口词、痛点和至少 3 个证据 URL。"
     ),
     agent=keyword_researcher,
     guardrail=_keyword_guardrail,
@@ -259,7 +268,11 @@ research_task = Task(
 )
 
 write_task = Task(
-    description="""消费研究员简报，调用 product_knowledge_base，撰写高质量 Markdown 正文。
+    description="""只根据下面这份研究简报写正文。不要重新选词，不要再跑一轮关键词研究。
+    调用 product_knowledge_base，撰写高质量 Markdown 正文。
+
+    【上一步结果：研究简报】
+    {research_brief}
 
     【已有文章标题——H1 不得雷同或换皮重复】
     {existing_titles}
@@ -344,7 +357,10 @@ write_task = Task(
 )
 
 edit_task = Task(
-    description="""终审草稿并输出可上线 Markdown，确保内容质量达到 SEO 和用户价值标准。
+    description="""只审下面这份草稿，输出可上线 Markdown。不要重新选题，不要重写一份新题目。
+
+    【上一步结果：待审草稿】
+    {draft_markdown}
 
     【已有文章标题】
     {existing_titles}
@@ -410,12 +426,6 @@ edit_task = Task(
 
 print("✅ 第二步：Agent / Task 组装完成（研究员已启用 Google Search Grounding）")
 
-yibelin_seo_factory = Crew(
-    agents=[keyword_researcher, content_writer, seo_editor],
-    tasks=[research_task, write_task, edit_task],
-    process=Process.sequential,
-    verbose=True,
-)
 
 def _factory_inputs() -> dict:
     existing = list_published_titles()
@@ -440,19 +450,103 @@ def _factory_inputs() -> dict:
     }
 
 
-def _run_crew(step: str):
+def _step_path(step: str) -> Path:
+    return RUN_DIR / STEP_FILES[step]
+
+
+def _save_step(step: str, text: str) -> Path:
+    RUN_DIR.mkdir(parents=True, exist_ok=True)
+    path = _step_path(step)
+    path.write_text(text.strip() + "\n", encoding="utf-8")
+    return path
+
+
+def _load_step(step: str) -> str:
+    path = _step_path(step)
+    if not path.is_file():
+        raise FileNotFoundError(path)
+    return path.read_text(encoding="utf-8")
+
+
+def _show_step(step: str, path: Path, text: str) -> None:
+    print(f"\n=================== {step} 结果 ===================")
+    print(f"文件: {path}")
     if step == "keyword":
-        print("只跑关键词提取：种子词 → 长尾词简报。不写正文、不发布。")
-        crew = Crew(
-            agents=[keyword_researcher],
-            tasks=[research_task],
-            process=Process.sequential,
-            verbose=True,
-        )
-    else:
-        print("跑完整流水线：挖词 → 写作 → 质检 → 发布。")
-        crew = yibelin_seo_factory
-    return crew.kickoff(inputs=_factory_inputs())
+        sections = brief_sections(text)
+
+        def first_line(name: str) -> str:
+            body = sections.get(name, "").strip()
+            return body.splitlines()[0] if body else "（无）"
+
+        print(f"关键词: {first_line('keyword')}")
+        print(f"搜索量: {first_line('search_volume')}")
+        print(f"难度: {first_line('keyword_difficulty')}")
+        print(f"缺口: {first_line('competitor_keyword_gap')}")
+    print(text.strip())
+    print("================================================\n")
+
+
+def _kickoff(agents: list, tasks: list, inputs: dict) -> str:
+    crew = Crew(
+        agents=agents,
+        tasks=tasks,
+        process=Process.sequential,
+        verbose=True,
+    )
+    return str(crew.kickoff(inputs=inputs)).strip()
+
+
+def run_keyword() -> str:
+    print("只跑关键词提取：种子词 → 长尾词简报。不写正文、不发布。")
+    text = _kickoff([keyword_researcher], [research_task], _factory_inputs())
+    path = _save_step("keyword", text)
+    _show_step("keyword", path, text)
+    print("下一步只读这个文件：python main.py --step write")
+    return text
+
+
+def run_write() -> str:
+    brief = _load_step("keyword")
+    print(f"只跑写作。输入只有: {_step_path('keyword')}")
+    text = _kickoff(
+        [content_writer],
+        [write_task],
+        {**_factory_inputs(), "research_brief": brief},
+    )
+    path = _save_step("write", text)
+    _show_step("write", path, text)
+    print("下一步只读这个文件：python main.py --step edit")
+    return text
+
+
+def run_edit() -> str:
+    draft = _load_step("write")
+    print(f"只跑编辑。输入只有: {_step_path('write')}")
+    text = _kickoff(
+        [seo_editor],
+        [edit_task],
+        {**_factory_inputs(), "draft_markdown": draft},
+    )
+    path = _save_step("edit", text)
+    _show_step("edit", path, text)
+    print("下一步只读这个文件：python main.py --step publish")
+    return text
+
+
+def run_publish() -> str:
+    final = _load_step("edit")
+    print(f"只发布。输入只有: {_step_path('edit')}")
+    html_path = publish_static_page(final, seed_keyword=SEED_KEYWORD)
+    print(f"静态页: {html_path}")
+    return str(html_path)
+
+
+def run_all() -> str:
+    print("按步跑完整流水线：挖词 → 写作 → 编辑 → 发布。每步结果写入 runs/latest/。")
+    run_keyword()
+    run_write()
+    run_edit()
+    return run_publish()
 
 
 if __name__ == "__main__":
@@ -461,24 +555,31 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="译比邻 SEO 工厂")
     parser.add_argument(
         "--step",
-        choices=("keyword", "all"),
+        choices=("keyword", "write", "edit", "publish", "all"),
         default="all",
-        help="keyword 只测试关键词提取；all 跑完整流水线",
+        help=(
+            "keyword 只挖词；write 只根据上一次挖词结果写草稿；"
+            "edit 只审上一次草稿；publish 只发布上一次终稿；all 按这个顺序全跑"
+        ),
     )
     args = parser.parse_args()
+    runners = {
+        "keyword": run_keyword,
+        "write": run_write,
+        "edit": run_edit,
+        "publish": run_publish,
+        "all": run_all,
+    }
 
     print("🚀 SEO 工厂启动（Vertex Gemini + Google Search Grounding）...")
     try:
-        result = _run_crew(args.step)
-        print("\n=================== ✨ 成品 ===================\n")
-        print(result)
-        print("\n================================================\n")
-        if args.step == "keyword":
-            print("✅ 关键词提取结束。要接着写文章再跑：python main.py --step all")
-        else:
-            html_path = publish_static_page(result, seed_keyword=SEED_KEYWORD)
-            print(f"✅ 静态页已写入: {html_path}")
-            print("✅ 流程：Grounding 深度挖词 → 多模板写作 → SEO 质检 → docs/（标题去重）")
+        runners[args.step]()
+    except FileNotFoundError as e:
+        print(f"❌ 缺少上一步结果：{e}")
+        print("先跑：python main.py --step keyword")
+        print("然后：python main.py --step write")
+        print("然后：python main.py --step edit")
+        print("然后：python main.py --step publish")
     except Exception as e:
         print(
             f"❌ 运行异常。请检查 Vertex 凭证 / GOOGLE_CLOUD_PROJECT，"

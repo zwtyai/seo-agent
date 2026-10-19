@@ -20,3 +20,6 @@ google-sa.json
 
 # 本地学习素材（learn/file1、file2…）
 learn/file*
+
+# 分步运行的中间结果
+runs/
