@@ -633,6 +633,38 @@ def test_content_rotation():
     print()
     return passed
 
+def test_page_seo():
+    """新发布的页面带 meta、Open Graph、Article 结构化数据，并写出 sitemap 与 robots。"""
+    import tempfile
+    from urllib.parse import quote
+
+    from static_publish import publish_static_page
+
+    print("=" * 60)
+    print("📝 测试 8：发布页技术 SEO")
+    print("=" * 60)
+
+    markdown = "# 为什么扫描版PDF会认错字？\n\n" + ("扫描件把字形当成图片，复制出来就不是原来的字。" * 8)
+    with tempfile.TemporaryDirectory() as tmp:
+        page = publish_static_page(markdown, seed_keyword="PDF 在线翻译", site_dir=Path(tmp))
+        html = page.read_text(encoding="utf-8")
+        sitemap = (Path(tmp) / "sitemap.xml").read_text(encoding="utf-8")
+        robots = (Path(tmp) / "robots.txt").read_text(encoding="utf-8")
+        cases = [
+            ("有 meta description", 'name="description"' in html),
+            ("有 Open Graph", 'property="og:title"' in html and 'property="og:description"' in html),
+            ("有 Article 结构化数据", "application/ld+json" in html and '"@type": "Article"' in html),
+            ("sitemap 带 lastmod", "<lastmod>" in sitemap and quote(page.name) in sitemap),
+            ("robots 指向 sitemap", "Sitemap: https://zwtyai.github.io/seo-agent/sitemap.xml" in robots),
+        ]
+    passed = True
+    for name, result in cases:
+        print(f"  {'✅' if result else '❌'} {name}")
+        passed = passed and result
+    print()
+    return passed
+
+
 def main():
     """运行所有测试"""
     print("\n" + "=" * 60)
@@ -650,6 +682,7 @@ def main():
     results.append(("关键词选题门槛", test_keyword_gate()))
     results.append(("成稿表述门槛", test_claim_gate()))
     results.append(("内容类型轮换", test_content_rotation()))
+    results.append(("发布页技术 SEO", test_page_seo()))
     
     # 汇总结果
     print("=" * 60)
