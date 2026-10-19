@@ -222,10 +222,10 @@ def create_write_task(
     
     def claim_guardrail(output) -> tuple[bool, str]:
         text = getattr(output, "raw", None) or str(output)
-        ok, message = gate_system.validate_article_claims(text)
+        ok, revised = gate_system.validate_article_claims(text)
         if not ok:
-            return ok, message
-        return gate_system.validate_content_type(text, preferred_type)
+            return ok, revised
+        return gate_system.validate_content_type(revised, preferred_type)
     
     return Task(
         description=description,
@@ -271,10 +271,10 @@ def create_edit_task(
     
     def claim_guardrail(output) -> tuple[bool, str]:
         text = getattr(output, "raw", None) or str(output)
-        ok, message = gate_system.validate_article_claims(text)
+        ok, revised = gate_system.validate_article_claims(text)
         if not ok:
-            return ok, message
-        return gate_system.validate_content_type(text, preferred_type)
+            return ok, revised
+        return gate_system.validate_content_type(revised, preferred_type)
     
     return Task(
         description=description,
