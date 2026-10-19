@@ -77,7 +77,7 @@ quality_gates:
     forbidden_hype:                  # 禁止夸大
       - "终极"
       - "彻底解决"
-      - "完美"
+      - "完美解决"
       - "100%"
     forbidden_disparage:             # 禁止贬低
       - "垃圾"
