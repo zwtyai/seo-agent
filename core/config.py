@@ -32,6 +32,7 @@ class ProductConfig:
     search_volume_max: int = 2000
     keyword_difficulty_max: int = 30
     keyword_exclusions: list[str] = field(default_factory=list)
+    keyword_scene_hints: list[str] = field(default_factory=list)
     
     # 内容策略
     content_types: list[dict] = field(default_factory=list)
@@ -155,6 +156,7 @@ class ProductConfig:
             search_volume_max=search_volume.get("max", 2000),
             keyword_difficulty_max=keyword_difficulty.get("max", 30),
             keyword_exclusions=keyword_strategy.get("exclusions", []),
+            keyword_scene_hints=keyword_strategy.get("scene_hints", []),
             
             # 内容策略
             content_types=content_strategy.get("types", []),

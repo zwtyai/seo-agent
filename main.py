@@ -124,6 +124,14 @@ def create_research_task(
     preferred_type = _get_preferred_content_type(config)
     keyword_shape = "问题型长尾词" if config.keyword_gate_require_question_type else "长尾词"
     
+    faq_note = (
+        "若是 FAQ型，正文稍后会要求至少 5 个「## Q:」标题。"
+        if preferred_type == "FAQ型"
+        else ""
+    )
+    scene_note = ""
+    if config.keyword_scene_hints:
+        scene_note = "优先这些具体场景：" + "、".join(config.keyword_scene_hints) + "。"
     description = f"""针对种子词 '{seed}'，使用 Google Search Grounding 深度挖掘高价值内容素材。
 
 【已有文章标题——禁止重复同一角度】
@@ -136,36 +144,57 @@ def create_research_task(
 {gsc_notes}
 
 上面若列出了可优先写的查询，本篇问句优先贴近其中一条，并且避开已有标题。
-上面若写的是没有数据，就按种子词继续挖一个新的{', '.join(config.keyword_types)}关键词。
-两种情况都要交出简报，不要等待 GSC。
+上面若写的是没有数据，就按种子词继续挖一个新的{keyword_shape}。两种情况都要交出简报，不要等待 GSC。
 
 选词门槛（写进简报；禁止编造数字）：
-1. **关键词**：## keyword 只写 1 个{keyword_shape}，不能是种子大词「{seed}」
+1. **{keyword_shape}**：## keyword 下面只写 1 个词，不能是种子大词「{seed}」
 2. **搜索量**：找到公开来源就写「搜索量: 数字」和 URL，数字须在 {config.search_volume_min}-{config.search_volume_max}。
-   公开结果里没有，就只写一行「搜索量: 未找到公开数据」
+   公开结果里没有，就只写一行「搜索量: 未找到公开数据」，不要为此换掉合适的词。
 3. **KD**：找到就写「KD: 数字」和 URL，须低于 {config.keyword_difficulty_max}。
-   没有就只写一行「KD: 未找到公开数据」
+   没有就只写一行「KD: 未找到公开数据」。
 4. **竞品缺口**：## competitor_keyword_gap 写竞品页面 URL，以及一行「缺口词: …」
-5. **内容类型**：本篇必须是 {preferred_type}。
-   ## suggested_content_type 只写这个类型，不要因为素材像别的类型就改掉。
+   （对方在排、已有标题没覆盖的那个词）
 
 核心要求：
-- 至少 {config.evidence_min_urls} 个真实 URL 证据，每个附 50-100 字抱怨摘要
-- 至少 {config.evidence_min_data_points} 个量化数据，并标注来源
-- 找不到公开数字就写「未找到公开数据」，不要编造
+1. **长尾痛点**：找到 1 个与已有文章明显不同的具体场景。必须可感知，不要泛泛而谈。{scene_note}
+2. **量化数据**（至少 {config.evidence_min_data_points} 条，标注来源；没有就写「未找到公开数据」）：
+   - 用户抱怨的频次（「知乎上某问题有多少个回答」）
+   - 错误率或失败率
+   - 时间成本（「手动处理需要多久」）
+   - 调研数字（「多少比例的用户遇到此问题」）
+3. **真实证据**：至少 {config.evidence_min_urls} 个真实 URL（知乎、Reddit、论坛、博客、竞品页面）。每个 URL 附 50-100 字抱怨摘要。优先带具体场景和情绪的原话。
+4. **竞品页面**：只记录 URL 和页面里有依据的原话。不要写「竞品很差」。可选写对方在哪个环节做不到，但必须有 URL。
+5. **内容类型**：本篇必须是 {preferred_type}。
+   ## suggested_content_type 只写这个类型，不要因为素材像别的类型就改掉。
+   {faq_note}
 
-输出这些小节：
+【禁止】无联网依据时凭空编造数据和 URL。不要把关键词写成文章标题。不要使用 ###。
+
+【输出格式】每个小节都是单独一行、行首的二级标题，名字必须如下。关键词写在 ## keyword 的下一行。
+
 ## keyword
+（这里写 1 个{keyword_shape}）
 ## search_volume
+（搜索量: 数字 加来源 URL，或一行「搜索量: 未找到公开数据」）
 ## keyword_difficulty
+（KD: 数字 加来源 URL，或一行「KD: 未找到公开数据」）
 ## competitor_keyword_gap
+（竞品页面 URL，以及一行「缺口词: …」）
 ## user_persona
 ## pain_points
+（含量化数据）
 ## quantitative_data
+（至少 {config.evidence_min_data_points} 条，标注来源）
 ## evidence_urls
+（至少 {config.evidence_min_urls} 个，每个带摘要）
 ## suggested_content_type
+{preferred_type}
 ## suggested_h1
+（独特标题草案）
 ## unique_angle
+（30 字内，说明与已有文章的差异）
+## competitor_gaps
+（可选。竞品局限，必须来自上面的 URL）
 """
     
     expected_output = (
@@ -215,10 +244,18 @@ def create_write_task(
 {_writing_guide(config)}
 """
     
-    expected_output = (
-        f"{config.word_count_min}-{config.word_count_max} 字 Markdown：先把问题写清楚，证据来自简报；"
-        f"体裁是 {preferred_type}；产品提及不超过 {config.product_mention_max} 次。"
-    )
+    if config.product_mention_max == 0:
+        expected_output = (
+            f"{config.word_count_min}-{config.word_count_max} 字 Markdown：先把问题写清楚，证据来自简报；"
+            f"体裁是 {preferred_type}；不要写本站自己的产品名。"
+        )
+    else:
+        mandatory = "、".join(config.knowledge_base_mandatory_mentions) or "知识库里的限制"
+        expected_output = (
+            f"{config.word_count_min}-{config.word_count_max} 字 Markdown：先把这一个问题写清楚，证据来自简报；"
+            f"体裁是 {preferred_type}；"
+            f"文末才用不超过 {config.product_mention_max} 次的「{config.name}」复述知识库能力，并写明{mandatory}。"
+        )
     
     def claim_guardrail(output) -> tuple[bool, str]:
         text = getattr(output, "raw", None) or str(output)
@@ -254,20 +291,35 @@ def create_edit_task(
 {_format_existing_titles(existing_titles)}
 
 【质量检查清单】
-1. 标题与差异化：H1 贴近本篇内容，与已有标题明显区分
-2. 内容深度与证据：是否引用了研究简报中的真实证据和 URL？
-3. SEO 优化：密度 {config.seo_keyword_density_min*100:.1f}%-{config.seo_keyword_density_max*100:.1f}%，调用 seo_link_injector
-4. 可读性：删除 AI 套话，段落适中
-5. 产品：{_product_rule(config)}
-6. 内容类型必须仍是 {preferred_type}。FAQ 要保留至少 5 个「## Q:」标题。
+1. **标题与差异化**：H1 贴近本篇内容，与已有标题明显区分。标题包含核心关键词。
+2. **内容深度与证据**：是否引用了研究简报中的真实证据和 URL？是否有量化数据？避免与已有文章论点重复。
+3. **SEO 优化**：关键词密度约 {config.seo_keyword_density_min*100:.1f}%-{config.seo_keyword_density_max*100:.1f}%，自然出现，不堆砌。H1/H2/H3 清楚。必须调用 seo_link_injector。
+4. **可读性**：删除「在当今时代」「综上所述」「赋能」「助力」。段落不超过 4 行。保留真实抱怨引用。
+5. **内容完整性**：字数保持在 {config.word_count_min}-{config.word_count_max}。教程步骤要能执行。对比只保留简报里有 URL 的事实，不补评分表。结尾最多一次试用引导，并说明结果仍需核对。
+6. **问题本身**：主体是否在解释这个问题为何发生、表现是什么？
+   {_product_rule(config)}
+   内容类型必须仍是 {preferred_type}。FAQ 要保留至少 5 个「## Q:」标题。
 7. {_forbidden_lines(config)}
-夸大句改成问题机制或知识库原话。贬低竞品、没有来源的测试和用户原话删掉。
 
+【改写动作】
+- 夸大句改成问题机制，或改成知识库原话
+- 贬低竞品的句子删掉，只保留简报里有 URL 的事实
+- 广告腔、没有来源的测试和用户原话删掉
+- 若缺少证据，补充研究简报中的引用
+- 若结构混乱，把问题解释放到前面，产品放到文末
+
+【不要】
+- 不要为了凑字数而注水
+- 不要删掉研究简报中的真实数据和引用
+- 不要把长文压缩成短文
+- 不要把「尽量保留」写成夸大说法
+
+最终输出：问题写清楚、没有夸大和贬低的 Markdown 终稿。
 """
     
     expected_output = (
-        "可上线 Markdown 终稿：问题写清楚、证据来自简报、"
-        "无夸大、无贬低竞品、无广告腔。"
+        "可上线 Markdown 终稿：问题本身写清楚，证据来自简报，"
+        "无夸大、无贬低竞品、无广告腔，产品只在文末按知识库复述。"
     )
     
     def claim_guardrail(output) -> tuple[bool, str]:
@@ -334,27 +386,63 @@ def _product_rule(config: ProductConfig) -> str:
 
 
 def _writing_guide(config: ProductConfig) -> str:
-    product_line = _product_rule(config)
-    ending = (
-        "不要写自己的产品。"
-        if config.product_mention_max == 0
-        else "文末一段产品能力（只复述知识库，并写限制）"
-    )
+    if config.product_mention_max == 0:
+        ending = "不要写自己的产品。"
+        tutorial_ending = "不要写自己的产品。"
+        product_block = "不要写本站自己的产品名，只写简报里的事实。"
+        close_line = "结尾不要加本站产品试用引导。"
+    else:
+        ending = "文末一段产品能力（只复述知识库，并写限制）"
+        tutorial_ending = "文末可把产品作为可选的一步"
+        product_block = _product_rule(config)
+        site = config.domain or config.seo_internal_links_target_url or "产品站点"
+        close_line = f"结尾可以用一次「可以打开 {site} 试一份自己的文件」，说明结果仍需核对。"
     return f"""
-【写作要求】
-1. 字数：{config.word_count_min}-{config.word_count_max} 字
-2. H1 使用简报的 suggested_h1 或写得更具体，必须含 ## keyword 里的那个词，并与已有标题区分
-3. 至少引用 2 个简报里的真实 URL。简报里没有的测试、样本、评分和人物结局不要写
-4. {product_line}
-5. 段落不超过 4 行。不用「在当今」「综上所述」「赋能」
-6. {_forbidden_lines(config)}
+**模板A：深度分析型**
+结构：问题场景 → 问题为何发生（含量化数据和 URL）→ 表现与影响 →
+      读者可以做的核对 → {ending}
+特点：主体是问题机制，不是产品方案
 
-【只套本篇指定的一种结构】
-深度分析型：问题场景 → 问题为何发生（含量化数据和 URL）→ 表现与影响 → 读者可以做的核对 → {ending}
-对比评测型：问题场景 → 简报里有 URL 的事实 → 这些事实说明了问题的哪一面 → {ending}。不打分，不宣布赢家
-教程指南型：问题场景 → 为什么困难 → 读者能做的 3-5 步 → 常见核对点 → {ending}
-FAQ型：引入这个问题 → 至少 5 个「## Q: 问题？」→ 每个答案先解释问题 → {ending}。少于 5 个不算 FAQ
-案例故事型：只复述简报里带 URL 的抱怨 → 这个场景里问题如何发生 → {ending}
+**模板B：对比评测型**
+结构：问题场景 → 简报里有 URL 的事实 → 这些事实说明了问题的哪一面 →
+      {ending}
+特点：没有简报中的实测，就不做评分表，不写「优秀 / 极佳」，不宣布赢家
+
+**模板C：教程指南型**
+结构：问题场景 → 为什么困难 → 读者能做的步骤（3-5步）→
+      常见核对点 → {tutorial_ending}
+特点：步骤针对问题本身
+
+**模板D：FAQ型**
+结构：引入这个问题 → 至少 5 个 Q&A（每个都是一行 H2：## Q: 问题？，答案先解释问题）→
+      {ending}
+特点：每个答案独立可读。少于 5 个「## Q:」不会被算成 FAQ。
+
+**模板E：案例故事型**
+结构：复述简报中带 URL 的抱怨 → 这个场景里问题如何发生 →
+      {ending}
+特点：简报里没有的人物、结局、效果，不要编
+
+【通用写作要求】
+1. **H1标题**：使用研究员的 suggested_h1 或自拟更优标题
+   - 必须包含简报 ## keyword 里的那个长尾词
+   - 必须独特，并与已有标题区分
+   - 可使用数字、疑问句、对比
+2. **证据引用**：至少引用 2 个研究简报中的真实证据，并标注来源。有量化数据就引用。
+3. **产品**：{product_block}
+4. **内容增强**：带数字的小标题，数字必须来自简报。只引用简报里已有 URL 的用户原话。
+5. **可信**：专业性来自把问题机制讲清楚。简报里没有的测试、样本、评分，不要写。
+6. **可读性**：段落不超过 4 行。使用 H2/H3。避免「在当今」「综上所述」「赋能」。
+7. **字数**：{config.word_count_min}-{config.word_count_max} 字。
+8. **结尾**：{close_line}
+
+【禁止】
+- {_forbidden_lines(config)}
+- 不打分，不宣布本产品赢了
+- 不编用户原话和人物结局
+- 正文主体写这个问题为何发生、表现是什么
+- 禁止编造简报里没有的数据和 URL
+- 禁止与已有文章换皮重复
 """
 
 

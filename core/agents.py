@@ -102,13 +102,20 @@ class AgentFactory:
     def _generate_researcher_backstory(self) -> str:
         """动态生成研究员backstory"""
         exclusions_str = "、".join(self.config.keyword_exclusions)
+        scene = "、".join(self.config.keyword_scene_hints)
+        scene_line = f"场景要具体（{scene}）。" if scene else "场景要具体。"
+        question_line = (
+            "用「如何 / 为什么 / 怎么」开头。"
+            if self.config.keyword_gate_require_question_type
+            else "写成具体长尾，不要交大词。"
+        )
         
         base_backstory = f"""你是一位数据驱动的 SEO 研究专家，接入了 Gemini 的 Google Search Grounding。
 
 你的职责是先选定一个值得写的长尾词，再为它找证据。选词规则：
 
-1. **长尾关键词**：围绕「{getattr(self, "_seed", None) or self.config.get_primary_seed_keyword()}」但避开把种子词原样交出来：{exclusions_str or '无'}
-   一篇只锁 1 个词。场景要具体。
+1. **长尾关键词**：{question_line}围绕「{getattr(self, "_seed", None) or self.config.get_primary_seed_keyword()}」，但避开把这些大词原样交出来：{exclusions_str or '无'}
+   一篇只锁 1 个词。{scene_line}
 
 2. **证据为王**：必须找到至少 {self.config.evidence_min_urls} 个真实用户抱怨的 URL（知乎、Reddit、论坛、博客、竞品评论），
    每个 URL 需提取 50-100 字的核心抱怨。优先选择带具体场景和情绪的原话。
@@ -117,6 +124,9 @@ class AgentFactory:
    让内容更有说服力。如果找不到现成数据，可以统计用户抱怨的频次。
 
 4. **竞品页面**：只记录对方页面 URL 和用户原话。不要写「竞品很差」这类结论。
+
+5. **交卷格式**：简报只用行首的二级标题。标题名必须是 keyword、search_volume、keyword_difficulty、competitor_keyword_gap、user_persona、pain_points、quantitative_data、evidence_urls、suggested_content_type、suggested_h1、unique_angle。
+   关键词写在「## keyword」下面的第一行。不要把关键词写成 # 或 ## 标题。不要用 ###。
 
 **禁止**凭空编造数据、URL 或用户评价。如果 Grounding 没有返回足够证据，明确说明，
 而不是伪造。宁可推迟生产，也不能输出低质量素材。"""
@@ -140,7 +150,7 @@ class AgentFactory:
             return (
                 f"把研究简报里的那一个问题写清楚：它为何发生、表现是什么、证据是什么；"
                 f"H1 贴近这个痛点，不得与已有标题雷同；"
-                f"产品只在文末按知识库复述一次，{word_range} 字"
+                f"「{self.config.name}」全文最多 {self.config.product_mention_max} 次，只放在文末，{word_range} 字"
             )
     
     def _generate_writer_backstory(self) -> str:
@@ -164,15 +174,22 @@ class AgentFactory:
             # 产品模式
             return f"""你是一位经验丰富的内容创作者，擅长多种内容类型：
 
+**深度分析型**：把问题的机制写清楚，引用简报里的数据和 URL。
+**对比评测型**：只对比简报里有 URL 的事实，不打分，不宣布谁赢了。
+**教程指南型**：步骤写读者能做的核对与处理，产品最多是其中一步。
+**FAQ型**：每个答案先回答问题本身。
+**案例故事型**：只复述简报里已有 URL 的用户抱怨，不编人物和结局。
+
+可写的类型：
 {types_str}
 
 写作原则：
 1. 文风硬核、禁止 AI 套话（如「在当今时代」「综上所述」「赋能」「助力」堆砌）
-2. 写作前必须调用 product_knowledge_base，产品句子只复述返回的原文
+2. 写作前必须调用知识库工具，产品句子只复述返回的原文
 3. 必须引用研究员报告中的真实数据、URL、用户抱怨
-4. 根据研究员建议的内容类型选择对应模板
+4. 只套本篇指定的那一种模板
 5. 正文主体是问题本身，避免与已有文章雷同
-6. {self.config.name} 全文最多 {self.config.product_mention_max} 次，集中在文末"""
+6. {self.config.name} 全文最多 {self.config.product_mention_max} 次，只放在文末一小节"""
     
     def _create_writer_tools(self, kb: dict) -> list:
         """创建写作工具"""
@@ -270,8 +287,8 @@ class AgentFactory:
         return f"""你是总编不是复读机：删套话、补具体细节、校正 H1/H2。
 密度约 {density_range}；必须调用 seo_link_injector；保留真实抱怨引用。
 若 H1 与「已有标题」过近，改写成更具体、可区分的标题。
-看到夸大、贬低其他工具的句子，改成问题机制和知识库里的原话。
-{mention_rule}"""
+看到夸大、贬低其他工具、广告腔的句子，改成问题机制和知识库里的原话。
+{mention_rule}产品名超过这个次数就删到上限以内，不要整段改写成夸大。"""
     
     def _create_editor_tools(self) -> list:
         """创建编辑工具"""
