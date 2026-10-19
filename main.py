@@ -260,7 +260,8 @@ def create_edit_task(
 4. 可读性：删除 AI 套话，段落适中
 5. 产品：{_product_rule(config)}
 6. 内容类型必须仍是 {preferred_type}。FAQ 要保留至少 5 个「## Q:」标题。
-7. 夸大句改成问题机制或知识库原话。贬低竞品、没有来源的测试和用户原话删掉。
+7. {_forbidden_lines(config)}
+夸大句改成问题机制或知识库原话。贬低竞品、没有来源的测试和用户原话删掉。
 
 """
     
@@ -303,6 +304,21 @@ def _get_preferred_content_type(config: ProductConfig) -> str:
     return least_used_content_type(published)
 
 
+def _forbidden_lines(config: ProductConfig) -> str:
+    """写进提示的禁词，与成稿质检用的是同一份配置。"""
+    groups = (
+        ("禁止夸大", config.claim_gate_forbidden_hype),
+        ("禁止贬低竞品", config.claim_gate_forbidden_disparage),
+        ("禁止过度营销", config.claim_gate_forbidden_marketing),
+    )
+    lines = [
+        f"{label}：不用「{'」「'.join(words)}」"
+        for label, words in groups
+        if words
+    ]
+    return "\n".join(lines) or "禁止夸大、禁止贬低竞品、禁止过度营销"
+
+
 def _product_rule(config: ProductConfig) -> str:
     if config.product_mention_max == 0:
         return "不要写本站自己的产品名，只写简报里的事实。"
@@ -331,7 +347,7 @@ def _writing_guide(config: ProductConfig) -> str:
 3. 至少引用 2 个简报里的真实 URL。简报里没有的测试、样本、评分和人物结局不要写
 4. {product_line}
 5. 段落不超过 4 行。不用「在当今」「综上所述」「赋能」
-6. 禁止夸大、禁止贬低竞品、禁止过度营销
+6. {_forbidden_lines(config)}
 
 【只套本篇指定的一种结构】
 深度分析型：问题场景 → 问题为何发生（含量化数据和 URL）→ 表现与影响 → 读者可以做的核对 → {ending}
