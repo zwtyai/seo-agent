@@ -12,19 +12,6 @@ if TYPE_CHECKING:
     from .config import ProductConfig
 
 
-def trim_product_mentions(text: str, name: str, max_count: int) -> tuple[str, int]:
-    """保留前 max_count 次产品名，多出来的换成「它」。返回新正文和删掉的次数。"""
-    if not name or max_count < 0:
-        return text, 0
-    count = text.count(name)
-    if count <= max_count:
-        return text, 0
-    parts = text.split(name)
-    head = name.join(parts[: max_count + 1])
-    tail = "它".join(parts[max_count + 1 :])
-    return head + "它" + tail, count - max_count
-
-
 class QualityGateSystem:
     """动态质量门槛系统"""
     
@@ -151,7 +138,13 @@ class QualityGateSystem:
             )
         
         if problems:
-            return False, "选题未通过，请重写研究简报：\n- " + "\n- ".join(problems)
+            hint = ""
+            if not sections.get("keyword"):
+                hint = (
+                    "\n每个小节必须是行首单独一行的二级标题，例如「## keyword」。"
+                    "关键词写在这个标题下面，不要把关键词当成标题，不要用 ###。"
+                )
+            return False, "选题未通过，请重写研究简报：\n- " + "\n- ".join(problems) + hint
         
         return True, markdown
     
@@ -188,14 +181,13 @@ class QualityGateSystem:
                 unique_found = list(dict.fromkeys(found))  # 去重保持顺序
                 problems.append(f"{label}：删掉这些说法：{'、'.join(unique_found[:8])}")
         
-        # 产品名多了就删掉多余的，不因此整篇失败。夸大、贬低、广告腔仍然拒绝。
         max_mentions = self.config.claim_gate_max_product_mentions
         if max_mentions > 0 and self.config.name:
-            text, removed = trim_product_mentions(text, self.config.name, max_mentions)
-            if removed:
-                print(
-                    f"✂️  {self.config.name} 多了 {removed} 次，已改成「它」。"
-                    f"保留前 {max_mentions} 次。"
+            mentions = text.count(self.config.name)
+            if mentions > max_mentions:
+                where = "放在文末一小节" if self.config.product_mention_position == "ending" else "不要再增加"
+                problems.append(
+                    f"{self.config.name} 出现了 {mentions} 次，全文最多 {max_mentions} 次，{where}。"
                 )
         
         if not problems:

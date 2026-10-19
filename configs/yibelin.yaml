@@ -22,6 +22,13 @@ keyword_strategy:
   keyword_difficulty:
     max: 30
   
+  scene_hints:
+    - "扫描件"
+    - "双栏"
+    - "公式"
+    - "表格"
+    - "水印"
+
   exclusions:
     - "PDF翻译"
     - "PDF在线翻译"
