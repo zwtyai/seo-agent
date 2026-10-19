@@ -29,6 +29,9 @@
 **输出格式：**
 ```markdown
 ## keyword
+## search_volume（搜索量 200-2000，附来源 URL）
+## keyword_difficulty（KD < 30，附来源 URL）
+## competitor_keyword_gap（竞品页面 URL + 缺口词）
 ## user_persona
 ## pain_points（含量化数据）
 ## quantitative_data（至少1条，标注来源）
