@@ -1,10 +1,20 @@
-name: Yibelin SEO Automation Factory
+name: SEO Automation Factory
 
 on:
   schedule:
-    # UTC 周日/二/四 18:00 ≈ 北京时间周一/三/五 02:00
+    # UTC 周日/二/四 18:00 ≈ 北京时间周一/三/五 02:00。定时只跑译比邻。
     - cron: '0 18 * * 0,2,4'
   workflow_dispatch:
+    inputs:
+      product:
+        description: 要跑的产品
+        required: true
+        default: yibelin
+        type: choice
+        options:
+          - yibelin
+          - tranzify
+          - toolnav
 
 # 本 workflow 不监听 push，避免「提交 site/ → 再触发工厂」死循环
 # main 已开 PR-only 规则：docs 变更走分支 + PR merge，不能直推 main
@@ -55,7 +65,11 @@ jobs:
           export GOOGLE_APPLICATION_CREDENTIALS=/tmp/gcp-sa.json
         fi
         export GOOGLE_GENAI_USE_VERTEXAI=true
-        python main.py
+        PRODUCT="${{ github.event.inputs.product }}"
+        if [ -z "$PRODUCT" ]; then
+          PRODUCT="yibelin"
+        fi
+        python main.py --product "$PRODUCT" --step all
 
     # 把生成的 docs/ 经 PR 合入 main → Pages（分支 /docs）自动更新
     # 若 org 禁止 Actions 用 GITHUB_TOKEN 开 PR，请配置 Secret GH_PAT（repo 权限的 classic PAT 或 fine-grained: contents+PRs）
@@ -66,6 +80,9 @@ jobs:
         git config user.name "github-actions[bot]"
         git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
         git add docs/
+        if [ -d outputs ]; then
+          git add outputs/
+        fi
         if git diff --staged --quiet; then
           echo "No docs/ changes to commit"
           exit 0
