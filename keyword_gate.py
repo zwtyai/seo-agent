@@ -15,6 +15,7 @@ _VOLUME = re.compile(
 )
 _KD = re.compile(r"(?:KD|难度)\s*[:：]\s*(\d{1,3})", re.IGNORECASE)
 _GAP_TERM = re.compile(r"(?:缺口词|关键词)\s*[:：]\s*(.+)")
+_MISSING_METRIC = re.compile(r"未找到公开数据|无法提供")
 
 
 def _norm(text: str) -> str:
@@ -29,6 +30,10 @@ def brief_sections(markdown: str) -> dict[str, str]:
         name = re.sub(r"（.*?）", "", lines[0]).strip().lower()
         sections[name] = "\n".join(lines[1:]).strip()
     return sections
+
+
+def _plain(text: str) -> str:
+    return re.sub(r"[*_`]", "", text)
 
 
 def _scaled_number(raw: str, suffix: str | None) -> int:
@@ -66,33 +71,44 @@ def validate_keyword_brief(
     volume_body = sections.get("search_volume", "")
     volume_match = _VOLUME.search(volume_body)
     if not volume_body:
-        problems.append("缺少 ## search_volume。写「搜索量: 数字」并附来源 URL。")
+        problems.append("缺少 ## search_volume。写「搜索量: 数字」或「搜索量: 未找到公开数据」。")
     elif volume_match is None:
-        problems.append("## search_volume 里要有一行「搜索量: 880」这种明确数字。")
+        if not _MISSING_METRIC.search(volume_body):
+            problems.append(
+                "## search_volume 里要有「搜索量: 数字」和来源 URL，"
+                "或一行「搜索量: 未找到公开数据」。"
+            )
     else:
         volume = _scaled_number(volume_match.group(1), volume_match.group(2))
         if not VOLUME_MIN <= volume <= VOLUME_MAX:
             problems.append(
-                f"搜索量 {volume} 不在 {VOLUME_MIN}-{VOLUME_MAX}。换一个落在这个区间的长尾词。"
+                f"搜索量 {volume} 不在 {VOLUME_MIN}-{VOLUME_MAX}。"
+                "换成区间内的词，或改写成「搜索量: 未找到公开数据」。"
             )
         if not _URL.search(volume_body):
-            problems.append("搜索量必须附带公开来源 URL，不能只写数字。")
+            problems.append("写了搜索量数字，就必须附带公开来源 URL。")
 
     difficulty_body = sections.get("keyword_difficulty", "")
     kd_match = _KD.search(difficulty_body)
     if not difficulty_body:
-        problems.append("缺少 ## keyword_difficulty。写「KD: 数字」并附来源 URL。")
+        problems.append("缺少 ## keyword_difficulty。写「KD: 数字」或「KD: 未找到公开数据」。")
     elif kd_match is None:
-        problems.append("## keyword_difficulty 里要有一行「KD: 18」这种明确数字。")
+        if not _MISSING_METRIC.search(difficulty_body):
+            problems.append(
+                "## keyword_difficulty 里要有「KD: 数字」和来源 URL，"
+                "或一行「KD: 未找到公开数据」。"
+            )
     else:
         kd = int(kd_match.group(1))
         if kd >= KD_MAX:
-            problems.append(f"KD {kd} 不低于 {KD_MAX}。换成难度更低的长尾词。")
+            problems.append(
+                f"KD {kd} 不低于 {KD_MAX}。换成更低的词，或改写成「KD: 未找到公开数据」。"
+            )
         if not _URL.search(difficulty_body):
-            problems.append("KD 必须附带公开来源 URL，不能只写数字。")
+            problems.append("写了 KD 数字，就必须附带公开来源 URL。")
 
     gap_body = sections.get("competitor_keyword_gap", "")
-    gap_term = _GAP_TERM.search(gap_body)
+    gap_term = _GAP_TERM.search(_plain(gap_body))
     if not gap_body:
         problems.append("缺少 ## competitor_keyword_gap。写竞品页面、缺口词和来源 URL。")
     elif not _URL.search(gap_body):

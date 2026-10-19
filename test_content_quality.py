@@ -502,6 +502,27 @@ KD: 18
     )[0]
     cases.append(("已有标题覆盖则拒绝", not covered))
 
+    missing = good.replace(
+        "搜索量: 880\n来源: https://example.com/volume",
+        "搜索量: 未找到公开数据",
+    ).replace(
+        "KD: 18\n来源: https://example.com/kd",
+        "KD: 无法提供",
+    )
+    cases.append((
+        "没有公开搜索量和难度也可以通过",
+        validate_keyword_brief(missing, "PDF 在线翻译")[0],
+    ))
+
+    bold_gap = good.replace(
+        "缺口词: 如何翻译扫描版PDF",
+        "**缺口词**: 如何翻译扫描版PDF",
+    )
+    cases.append((
+        "加粗的缺口词可以通过",
+        validate_keyword_brief(bold_gap, "PDF 在线翻译")[0],
+    ))
+
     passed = True
     for name, result in cases:
         print(f"  {'✅' if result else '❌'} {name}")
