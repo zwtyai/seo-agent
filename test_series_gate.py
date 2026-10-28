@@ -45,9 +45,12 @@ class SeriesGateTest(unittest.TestCase):
         self.assertEqual(coldfact.mode, "series")
         self.assertEqual(yibelin.mode, "seo")
         self.assertEqual(coldfact.publishing_output_dir, "docs/series/coldfact/")
+        self.assertIn("日常生活里的小误判", coldfact.description)
         voice = KnowledgeBaseLoader(coldfact).load()
         self.assertEqual(voice["type"], "series_voice")
         self.assertIn("带走一句", voice["content"])
+        self.assertIn("明确不做", voice["content"])
+        self.assertIn("厨房", voice["content"])
 
     def test_brief_requires_a_real_url(self):
         ok, message = self.gate.validate_series_brief(
@@ -131,7 +134,10 @@ class SeriesGateTest(unittest.TestCase):
     def test_xhs_note_requires_cover_takeaway_and_tags(self):
         coldfact = ProductConfig.load("coldfact")
         self.assertTrue(coldfact.publishing_xiaohongshu_enabled)
+        self.assertIn("日常误判", coldfact.seed_keywords)
         self.assertIn("每日冷知识", coldfact.publishing_xiaohongshu_tags)
+        self.assertIn("日常误判", coldfact.publishing_xiaohongshu_tags)
+        self.assertNotIn("人体冷知识", coldfact.publishing_xiaohongshu_tags)
 
         bad = """## cover_title
 震惊万亿倍香蕉
@@ -169,7 +175,7 @@ class SeriesGateTest(unittest.TestCase):
 
 带走一句：下次别把超市分类当成植物学结论。
 ## tags
-#每日冷知识 #人体冷知识 #冷知识分享 #植物冷知识
+#每日冷知识 #日常误判 #生活常识 #厨房
 ## source_note
 来源：不列颠百科
 """
@@ -181,6 +187,7 @@ class SeriesGateTest(unittest.TestCase):
         paste = format_xhs_copy_paste(revised)
         self.assertIn("香蕉算浆果，草莓不算", paste)
         self.assertIn("#每日冷知识", paste)
+        self.assertIn("#日常误判", paste)
         self.assertIn("封面大字：香蕉其实算浆果", paste)
 
 

@@ -1,4 +1,5 @@
-# 每日冷知识。mode: series 走「找一条 → 卡片」，不走选词量和长文质检。
+# 每日冷知识。定位：日常生活里可纠正的小误判。
+# mode: series 走「找一条 → 卡片 → 小红书文案」，不走选词量和长文质检。
 
 product:
   id: "coldfact"
@@ -6,19 +7,20 @@ product:
   # Pages 源是 /docs，公网路径对应 docs/series/coldfact/。
   # 官网反代 docs/ 时请排除 /series/，避免冷知识进 yibelin。
   domain: "https://zwtyai.github.io/seo-agent/series/coldfact/"
-  description: "每天一条，把网上散落的冷知识收成固定栏目"
+  description: "每天一条，纠正一个日常生活里的小误判"
   mode: series
 
 keyword_strategy:
+  # 主定位是日常误判；人体常识只作配菜子桶。
   seed_keywords:
-    - "人体冷知识"
+    - "日常误判"
+    - "生活常识纠正"
   scene_hints:
-    - "感官"
-    - "骨骼"
-    - "血液"
-    - "睡眠"
-    - "消化"
-    - "皮肤"
+    - "厨房与食物"
+    - "清洁与洗衣"
+    - "睡眠与疲劳"
+    - "家用小物用法"
+    - "人体常见误解"
   search_volume:
     min: 0
     max: 0
@@ -80,8 +82,8 @@ publishing:
     enabled: true
     tags:
       - "每日冷知识"
-      - "人体冷知识"
-      - "冷知识分享"
+      - "日常误判"
+      - "生活常识"
 
 monitoring:
   gsc:
