@@ -213,7 +213,102 @@ class QualityGateSystem:
         if expected == "FAQ型":
             hint = " FAQ 至少写 5 个「## Q: 问题？」标题。"
         return False, f"成稿类型必须是{expected}，当前识别为{actual}。{hint}"
-    
+
+    def validate_series_brief(
+        self,
+        markdown: str,
+        existing_titles: list[str] | None = None,
+        existing_docs: list[str] | None = None,
+    ) -> tuple[bool, str]:
+        """系列选题：一条事实、一句理由、一个可打开的来源。"""
+        problems: list[str] = []
+        text = _strip_fence(markdown)
+        sections = self._parse_sections(text)
+
+        title = _first_line(sections.get("title", ""))
+        fact = _first_line(sections.get("fact", ""))
+        why = _first_line(sections.get("why", ""))
+        source_url = _first_url(sections.get("source_url", ""))
+
+        if len(title) < 4:
+            problems.append("缺少 ## title，用一句话写出这条冷知识的标题。")
+        if len(fact) < 8:
+            problems.append("缺少 ## fact，用自己的话写清这条事实。")
+        if len(why) < 4:
+            problems.append("缺少 ## why，用一句说明它哪里和日常印象相反。")
+        if not source_url:
+            problems.append("缺少 ## source_url。写一个 http 开头的来源页，找不到就不要交这条。")
+
+        folded_title = self._strip_issue_prefix(self._normalize_text(title))
+        if folded_title and existing_titles:
+            for old in existing_titles:
+                old_key = self._strip_issue_prefix(self._normalize_text(old))
+                if old_key and folded_title == old_key:
+                    problems.append(f"标题和已发内容重复：{old}")
+                    break
+
+        folded_fact = self._normalize_text(fact)
+        if len(folded_fact) >= 8 and existing_docs:
+            for doc in existing_docs:
+                if folded_fact in self._normalize_text(doc):
+                    problems.append("这条事实已经发过，换一条。")
+                    break
+
+        if problems:
+            return False, "选题未通过，请重找一条：\n- " + "\n- ".join(problems)
+        return True, text
+
+    def validate_series_card(
+        self,
+        markdown: str,
+        existing_titles: list[str] | None = None,
+        source_url: str = "",
+    ) -> tuple[bool, str]:
+        """系列成稿：短卡片、带来源、不重复、不写据说。"""
+        problems: list[str] = []
+        text = _strip_fence(markdown)
+        title = ""
+        for line in text.splitlines():
+            if line.strip().startswith("# "):
+                title = line.strip()[2:].strip()
+                break
+        if not title:
+            problems.append("第一行写成 # 标题。")
+
+        url = source_url or _first_url(text)
+        if not url or url not in text:
+            problems.append("正文要保留简报里的来源 URL，写成「来源：[站点名](URL)」。")
+
+        hearsay = re.findall(r"据说|网传|听说|据传|坊间", text)
+        if hearsay:
+            problems.append("删掉没有来源的说法：" + "、".join(dict.fromkeys(hearsay)))
+
+        body_len = len(re.sub(r"\s+", "", text))
+        if body_len < self.config.word_count_min:
+            problems.append(
+                f"正文大约 {body_len} 字，少于 {self.config.word_count_min}。把事实写完整，不要只留标题。"
+            )
+        if body_len > self.config.word_count_max:
+            problems.append(
+                f"正文大约 {body_len} 字，超过 {self.config.word_count_max}。删到一张卡片，不要写成分析文。"
+            )
+
+        folded_title = self._strip_issue_prefix(self._normalize_text(title))
+        if folded_title and existing_titles:
+            for old in existing_titles:
+                old_key = self._strip_issue_prefix(self._normalize_text(old))
+                if old_key and folded_title == old_key:
+                    problems.append(f"标题和已发内容重复：{old}")
+                    break
+
+        if problems:
+            return False, "卡片未通过，请改写：\n- " + "\n- ".join(problems)
+        return True, text
+
+    @staticmethod
+    def _strip_issue_prefix(text: str) -> str:
+        return re.sub(r"^第\d+期[·•:：\-]*", "", text or "")
+
     @staticmethod
     def _parse_sections(markdown: str) -> dict[str, str]:
         """解析Markdown sections"""
@@ -239,3 +334,42 @@ class QualityGateSystem:
         if suffix:
             number *= 1000
         return int(round(number))
+
+
+_FENCE_RE = re.compile(r"^```(?:markdown|md)?\s*\n(.*)\n```\s*$", re.DOTALL)
+_ISSUE_PREFIX_RE = re.compile(r"^第\s*\d+\s*期\s*[·•:：\-]\s*")
+
+
+def _strip_fence(text: str) -> str:
+    stripped = (text or "").strip()
+    match = _FENCE_RE.match(stripped)
+    return match.group(1).strip() if match else stripped
+
+
+def _first_line(text: str) -> str:
+    for line in (text or "").splitlines():
+        cleaned = line.strip().strip("*").strip()
+        if cleaned:
+            return cleaned
+    return ""
+
+
+def _first_url(text: str) -> str:
+    match = re.search(r"https?://[^\s)>\]]+", text or "")
+    if not match:
+        return ""
+    return match.group(0).rstrip(".,，。")
+
+
+def stamp_series_issue(markdown: str, issue: int) -> str:
+    """把期号写进 H1。模型写错编号时，以已发布篇数算出的期号为准。"""
+    text = _strip_fence(markdown)
+    lines = text.splitlines()
+    label = f"第 {issue:03d} 期"
+    for index, line in enumerate(lines):
+        if not line.strip().startswith("# "):
+            continue
+        title = _ISSUE_PREFIX_RE.sub("", line.strip()[2:].strip()).strip()
+        lines[index] = f"# {label} · {title}" if title else f"# {label}"
+        return "\n".join(lines).strip() + "\n"
+    return f"# {label}\n\n{text}\n"

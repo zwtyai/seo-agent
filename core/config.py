@@ -24,6 +24,8 @@ class ProductConfig:
     name: str
     domain: str
     description: str = ""
+    # seo：挖词写长文。series：固定栏目，一条来源一张卡片。
+    mode: str = "seo"
     
     # 关键词策略
     seed_keywords: list[str] = field(default_factory=list)
@@ -148,6 +150,7 @@ class ProductConfig:
             name=product.get("name", product_id),
             domain=product.get("domain", ""),
             description=product.get("description", ""),
+            mode=str(product.get("mode") or "seo").strip().lower(),
             
             # 关键词策略
             seed_keywords=keyword_strategy.get("seed_keywords", []),
