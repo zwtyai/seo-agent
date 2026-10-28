@@ -21,6 +21,7 @@ from core import (
     ProductConfig,
     QualityGateSystem,
 )
+from core.gates import _first_url, stamp_series_issue
 from publish_and_monitor import gsc_research_notes
 from static_publish import (
     least_used_content_type,
@@ -464,6 +465,227 @@ def _format_content_types(config: ProductConfig) -> str:
     return "\n".join(f"- {name}: {count}" for name, count in counts.items())
 
 
+def _series_issue_number(config: ProductConfig) -> int:
+    """下一期期号。已发布几篇，下一篇就是几加一。"""
+    return len(list_published_titles(_site_dir(config))) + 1
+
+
+def _series_bucket(config: ProductConfig) -> str:
+    """按已发布篇数轮换主题角度，避免连续几天挤在同一面。"""
+    buckets = [item for item in config.keyword_scene_hints if item]
+    if not buckets:
+        return _choose_seed(config)
+    published = len(list_published_titles(_site_dir(config)))
+    return buckets[published % len(buckets)]
+
+
+def create_series_find_task(
+    researcher,
+    config: ProductConfig,
+    gate_system: QualityGateSystem,
+    existing_titles: list[str],
+    existing_docs: list[str],
+    bucket: str,
+) -> Task:
+    """系列选题：一条事实加一个来源，不写搜索量和竞品。"""
+    theme = _choose_seed(config)
+    description = f"""为栏目「{config.name}」找 1 条还没发过的冷知识。
+
+【主题】
+{theme}
+
+【今天优先的角度】
+{bucket}
+
+【已发标题——不要再找同一条】
+{_format_existing_titles(existing_titles)}
+
+规则：
+1. 用 Google Search Grounding 找一条具体事实。要能让人「咦」一下，但不要猎奇谣言。
+2. 来源必须是这次搜索打开过的页面。百科、博物馆、论文摘要、正规媒体都可以。
+3. 用自己的话写事实，不要整段抄原文。
+4. 找不到可打开的页面，就不要换一个编出来的 URL。## source_url 下面写「未找到」。
+5. 不要写搜索量、关键词难度、竞品、产品。
+
+【输出格式】每个小节都是单独一行、行首的二级标题。
+
+## title
+（一句话标题，不要写期号）
+## fact
+（两三句，说清事实本身）
+## why
+（一句，它和日常印象哪里相反）
+## source_name
+（来源站点或文章名）
+## source_url
+（一个 http 开头的 URL）
+"""
+    expected_output = "一条冷知识简报：标题、事实、一句理由、来源名、可打开的 URL。"
+
+    def brief_guardrail(output) -> tuple[bool, str]:
+        text = getattr(output, "raw", None) or str(output)
+        return gate_system.validate_series_brief(text, existing_titles, existing_docs)
+
+    return Task(
+        description=description,
+        expected_output=expected_output,
+        agent=researcher,
+        guardrail=brief_guardrail,
+        guardrail_max_retries=1,
+    )
+
+
+def create_series_write_task(
+    writer,
+    config: ProductConfig,
+    gate_system: QualityGateSystem,
+    brief: str,
+    existing_titles: list[str],
+    voice: str,
+    issue: int,
+) -> Task:
+    """把简报收成一张卡片。期号由代码写入，不让模型编号。"""
+    source_url = _first_url(brief)
+    description = f"""把下面这份简报收成一张「{config.name}」卡片。不要再搜索，不要换事实。
+
+【简报】
+{brief}
+
+【栏目语气】
+{voice or "短、好奇，像跟朋友说一件刚刚核对过的事。"}
+
+【已发标题】
+{_format_existing_titles(existing_titles)}
+
+卡片只有这四段，大约 {config.word_count_min}-{config.word_count_max} 字：
+
+# 标题
+事实写两三句，用自己的话。
+为什么值得说：一句，点出和日常印象相反的地方，不展开证明。
+来源：[这里写简报里的来源名]({source_url})
+
+要求：
+1. H1 只写标题，不要自己加「第 N 期」。
+2. 来源那一行必须原样带上这个 URL：{source_url}
+3. 不要写据说、网传、听说。
+4. 不要写步骤、评测、搜索量或产品推荐。
+5. 简报里没有的数字和人物不要补。
+"""
+    expected_output = (
+        f"{config.word_count_min}-{config.word_count_max} 字的 Markdown 卡片："
+        "标题、事实、一句理由、带来源链接。"
+    )
+
+    def card_guardrail(output) -> tuple[bool, str]:
+        text = getattr(output, "raw", None) or str(output)
+        ok, revised = gate_system.validate_series_card(
+            text,
+            existing_titles,
+            source_url=source_url,
+        )
+        if not ok:
+            return ok, revised
+        return True, stamp_series_issue(revised, issue)
+
+    return Task(
+        description=description,
+        expected_output=expected_output,
+        agent=writer,
+        guardrail=card_guardrail,
+        guardrail_max_retries=1,
+    )
+
+
+def run_series_find(config: ProductConfig, factory: AgentFactory, gate_system: QualityGateSystem) -> str:
+    """系列：找一条带来源的事实。"""
+    print(f"[{config.name}] 选题：找一条还没发过的冷知识")
+    site_dir = _site_dir(config)
+    existing_titles = list_published_titles(site_dir)
+    existing_docs = list_published_markdown(site_dir)
+    bucket = _series_bucket(config)
+    print(f"已发 {len(existing_titles)} 期")
+    print(f"今天的角度：{bucket}")
+
+    researcher = factory.create_researcher(_choose_seed(config))
+    if config.agent_researcher_use_grounding:
+        enable_google_search_grounding(researcher.llm)
+
+    task = create_series_find_task(
+        researcher,
+        config,
+        gate_system,
+        existing_titles,
+        existing_docs,
+        bucket,
+    )
+    text = _kickoff([researcher], [task], {})
+    path = _save_step(config, "keyword", text)
+    _show_step("keyword", path, text)
+    print(f"简报已保存: {path}")
+    print(f"下一步：python main.py --product {config.id} --step write")
+    return text
+
+
+def run_series_write(config: ProductConfig, factory: AgentFactory, gate_system: QualityGateSystem) -> str:
+    """系列：简报收成卡片，并写成终稿。不再走 SEO 编辑。"""
+    print(f"[{config.name}] 写作：简报 → 卡片")
+    brief = _load_step(config, "keyword")
+    voice = factory.kb_loader.load().get("content", "")
+    existing_titles = list_published_titles(_site_dir(config))
+    issue = _series_issue_number(config)
+    writer = factory.create_writer()
+    task = create_series_write_task(
+        writer,
+        config,
+        gate_system,
+        brief,
+        existing_titles,
+        voice,
+        issue,
+    )
+    text = _kickoff([writer], [task], {})
+    text = stamp_series_issue(text, issue)
+    draft_path = _save_step(config, "write", text)
+    final_path = _save_step(config, "edit", text)
+    _show_step("write", draft_path, text)
+    print(f"卡片已保存: {final_path}")
+    print(f"下一步：python main.py --product {config.id} --step publish")
+    return text
+
+
+def run_series_finalize(config: ProductConfig, gate_system: QualityGateSystem) -> str:
+    """不再叫编辑模型。核对卡片，通过后当作终稿。"""
+    print(f"[{config.name}] 核对卡片")
+    draft = _load_step(config, "write")
+    brief = _load_step(config, "keyword")
+    existing_titles = list_published_titles(_site_dir(config))
+    ok, revised = gate_system.validate_series_card(
+        draft,
+        existing_titles,
+        source_url=_first_url(brief),
+    )
+    if not ok:
+        raise SystemExit(revised)
+    text = stamp_series_issue(revised, _series_issue_number(config))
+    path = _save_step(config, "edit", text)
+    _show_step("edit", path, text)
+    print(f"终稿已保存: {path}")
+    return text
+
+
+def run_series_all(
+    config: ProductConfig,
+    factory: AgentFactory,
+    gate_system: QualityGateSystem,
+    publisher: MultiPublisher,
+) -> dict:
+    """系列完整流程：找一条 → 卡片 → 发布。"""
+    print(f"[{config.name}] 完整流程：找一条 → 卡片 → 发布\n")
+    run_series_find(config, factory, gate_system)
+    run_series_write(config, factory, gate_system)
+    return run_publish(config, publisher)
+
+
 def run_keyword(config: ProductConfig, factory: AgentFactory, gate_system: QualityGateSystem) -> str:
     """只跑关键词研究"""
     print(f"🔍 [{config.name}] 关键词研究：种子词 → 长尾词简报")
@@ -620,7 +842,11 @@ def main():
     print(f"🎯 产品: {config.name}")
     print(f"🌐 域名: {config.domain}")
     print(f"📂 输出: {config.publishing_output_dir}")
-    print(f"🔑 种子词: {', '.join(config.seed_keywords)}\n")
+    if config.mode == "series":
+        print(f"📌 模式: 系列栏目")
+        print(f"🔑 主题: {', '.join(config.seed_keywords)}\n")
+    else:
+        print(f"🔑 种子词: {', '.join(config.seed_keywords)}\n")
     
     # 2. 初始化 Vertex LLM
     try:
@@ -639,14 +865,23 @@ def main():
     gate_system = QualityGateSystem(config)
     publisher = MultiPublisher(config)
     
-    # 4. 执行流程
-    runners = {
-        "keyword": lambda: run_keyword(config, factory, gate_system),
-        "write": lambda: run_write(config, factory, gate_system),
-        "edit": lambda: run_edit(config, factory, gate_system),
-        "publish": lambda: run_publish(config, publisher),
-        "all": lambda: run_all(config, factory, gate_system, publisher),
-    }
+    # 4. 执行流程。系列栏目不走选词量和长文编辑。
+    if config.mode == "series":
+        runners = {
+            "keyword": lambda: run_series_find(config, factory, gate_system),
+            "write": lambda: run_series_write(config, factory, gate_system),
+            "edit": lambda: run_series_finalize(config, gate_system),
+            "publish": lambda: run_publish(config, publisher),
+            "all": lambda: run_series_all(config, factory, gate_system, publisher),
+        }
+    else:
+        runners = {
+            "keyword": lambda: run_keyword(config, factory, gate_system),
+            "write": lambda: run_write(config, factory, gate_system),
+            "edit": lambda: run_edit(config, factory, gate_system),
+            "publish": lambda: run_publish(config, publisher),
+            "all": lambda: run_all(config, factory, gate_system, publisher),
+        }
     
     try:
         runners[args.step]()

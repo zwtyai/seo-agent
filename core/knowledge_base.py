@@ -59,7 +59,10 @@ class KnowledgeBaseLoader:
             }
         
         if main_file.suffix == ".md":
-            return self._load_markdown(main_file)
+            loaded = self._load_markdown(main_file)
+            if self.config.mode == "series":
+                loaded["type"] = "series_voice"
+            return loaded
         elif main_file.suffix == ".json":
             return self._load_json(main_file)
         else:

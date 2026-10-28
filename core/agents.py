@@ -44,8 +44,13 @@ class AgentFactory:
         goal = self._generate_researcher_goal()
         backstory = self._generate_researcher_backstory()
         
+        role = (
+            f"{self.config.name} 选题编辑"
+            if self.config.mode == "series"
+            else f"{self.config.name} 关键词研究员 (Keyword Researcher)"
+        )
         return Agent(
-            role=f"{self.config.name} 关键词研究员 (Keyword Researcher)",
+            role=role,
             goal=goal,
             backstory=backstory,
             llm=self.researcher_llm,
@@ -60,8 +65,13 @@ class AgentFactory:
         goal = self._generate_writer_goal()
         backstory = self._generate_writer_backstory()
         
+        role = (
+            f"{self.config.name} 栏目作者"
+            if self.config.mode == "series"
+            else f"{self.config.name} 内容创作者 (Technical Content Writer)"
+        )
         return Agent(
-            role=f"{self.config.name} 内容创作者 (Technical Content Writer)",
+            role=role,
             goal=goal,
             backstory=backstory,
             tools=tools,
@@ -89,6 +99,11 @@ class AgentFactory:
     
     def _generate_researcher_goal(self) -> str:
         """动态生成研究员goal"""
+        if self.config.mode == "series":
+            return (
+                f"为栏目「{self.config.name}」找 1 条还没发过的冷知识。"
+                "必须有可打开的来源 URL。找不到就不要编。"
+            )
         seed = getattr(self, "_seed", None) or self.config.get_primary_seed_keyword()
         types_str = "、".join(self.config.keyword_types) if self.config.keyword_types else "长尾"
         
@@ -101,6 +116,15 @@ class AgentFactory:
     
     def _generate_researcher_backstory(self) -> str:
         """动态生成研究员backstory"""
+        if self.config.mode == "series":
+            return f"""你为固定栏目「{self.config.name}」找素材，不写 SEO 长文，也不做竞品分析。
+
+规则：
+1. 用 Google Search Grounding 找 1 条具体、可核对的事实。
+2. 来源必须是这次搜索里打开过的页面。没有页面就写「未找到」，不要编 URL。
+3. 用自己的话概括，不要整段抄原文。
+4. 不要写搜索量、KD、用户痛点或产品推荐。
+5. 交卷只用这些行首二级标题：title、fact、why、source_name、source_url。"""
         exclusions_str = "、".join(self.config.keyword_exclusions)
         scene = "、".join(self.config.keyword_scene_hints)
         scene_line = f"场景要具体（{scene}）。" if scene else "场景要具体。"
@@ -138,6 +162,11 @@ class AgentFactory:
     def _generate_writer_goal(self) -> str:
         """动态生成写作goal"""
         word_range = f"{self.config.word_count_min}-{self.config.word_count_max}"
+        if self.config.mode == "series":
+            return (
+                f"把简报里的那一条事实改写成「{self.config.name}」卡片，"
+                f"{word_range} 字，保留来源链接，不要展开证明。"
+            )
         
         if self.config.product_mention_max == 0:
             # 导航站模式
@@ -155,6 +184,13 @@ class AgentFactory:
     
     def _generate_writer_backstory(self) -> str:
         """动态生成写作backstory"""
+        if self.config.mode == "series":
+            return f"""你写栏目「{self.config.name}」，不是评测，也不是教程。
+
+一张卡片只有四段：标题、事实、为什么值得说、来源。
+口气短、好奇，像跟朋友说一件刚刚核对过的事。
+不要写「在当今」「综上所述」，不要写据说、网传。
+不要加搜索分析、步骤清单或产品推荐。事实和 URL 只能来自简报。"""
         types = self.config.get_content_type_priority()
         types_str = "\n".join(f"- {name}" for name in types) if types else "- 专业文章"
         
@@ -193,6 +229,9 @@ class AgentFactory:
     
     def _create_writer_tools(self, kb: dict) -> list:
         """创建写作工具"""
+        if self.config.mode == "series":
+            return [self._make_voice_tool(kb)]
+
         kb_type = kb.get("type", "placeholder")
         
         if kb_type == "product_capabilities":
@@ -204,6 +243,18 @@ class AgentFactory:
         else:
             return []
     
+    def _make_voice_tool(self, kb: dict):
+        """栏目语气。系列卡片照这个口气写，不复述成产品能力。"""
+        config = self.config
+        voice = kb.get("content", "")
+
+        @tool(f"{config.id}_voice")
+        def series_voice_tool(query: str) -> str:
+            """返回栏目语气和卡片格式。写作时照这个口气，不要写成产品介绍。"""
+            return f"【{config.name} 栏目语气】\n{voice}"
+
+        return series_voice_tool
+
     def _make_product_kb_tool(self, kb: dict):
         """创建产品知识库工具"""
         config = self.config

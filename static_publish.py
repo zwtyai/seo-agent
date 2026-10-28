@@ -465,6 +465,11 @@ def publish_static_page(
     assets_dir = site_dir / "assets"
     posts_dir.mkdir(parents=True, exist_ok=True)
     assets_dir.mkdir(parents=True, exist_ok=True)
+    style_path = assets_dir / "style.css"
+    if not style_path.exists():
+        bundled = Path(__file__).resolve().parent / "docs" / "assets" / "style.css"
+        if bundled.is_file():
+            style_path.write_text(bundled.read_text(encoding="utf-8"), encoding="utf-8")
 
     markdown = _result_to_markdown(result)
     existing = list_published_titles(site_dir)

@@ -2,8 +2,10 @@ name: SEO Automation Factory
 
 on:
   schedule:
-    # UTC 周日/二/四 18:00 ≈ 北京时间周一/三/五 02:00。定时只跑译比邻。
+    # UTC 周日/二/四 18:00 ≈ 北京时间周一/三/五 02:00。这条只跑译比邻。
     - cron: '0 18 * * 0,2,4'
+    # UTC 每天 00:00 ≈ 北京时间 08:00。这条只跑每日冷知识。
+    - cron: '0 0 * * *'
   workflow_dispatch:
     inputs:
       product:
@@ -15,6 +17,7 @@ on:
           - yibelin
           - tranzify
           - toolnav
+          - coldfact
 
 # 本 workflow 不监听 push，避免「提交 site/ → 再触发工厂」死循环
 # main 已开 PR-only 规则：docs 变更走分支 + PR merge，不能直推 main
@@ -67,8 +70,12 @@ jobs:
         export GOOGLE_GENAI_USE_VERTEXAI=true
         PRODUCT="${{ github.event.inputs.product }}"
         if [ -z "$PRODUCT" ]; then
-          PRODUCT="yibelin"
+          case "${{ github.event.schedule }}" in
+            "0 0 * * *") PRODUCT="coldfact" ;;
+            *) PRODUCT="yibelin" ;;
+          esac
         fi
+        echo "PRODUCT=$PRODUCT" >> "$GITHUB_ENV"
         python main.py --product "$PRODUCT" --step all
 
     # 把生成的 docs/ 经 PR 合入 main → Pages（分支 /docs）自动更新
@@ -83,13 +90,17 @@ jobs:
         if [ -d outputs ]; then
           git add outputs/
         fi
+        # 系列栏目（如冷知识）在 series/，故意不进 docs/，以免跟 yibelin 官网代理目录混在一起。
+        if [ -d series ]; then
+          git add series/
+        fi
         if git diff --staged --quiet; then
-          echo "No docs/ changes to commit"
+          echo "No docs/ or series/ changes to commit"
           exit 0
         fi
         branch="chore/seo-docs-${GITHUB_RUN_ID}"
         git checkout -b "$branch"
-        git commit -m "chore: publish SEO static page from Actions"
+        git commit -m "chore: publish ${PRODUCT:-seo} static page from Actions"
         git push -u origin HEAD
         pr_url=$(gh pr create \
           --base main \

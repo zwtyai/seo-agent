@@ -1,0 +1,92 @@
+# 每日冷知识。mode: series 走「找一条 → 卡片」，不走选词量和长文质检。
+
+product:
+  id: "coldfact"
+  name: "每日冷知识"
+  # 独立于 docs/。docs/ 以后会代理进 yibelin 官网，冷知识不能混进去。
+  domain: "https://zwtyai.github.io/seo-agent-series/coldfact/"
+  description: "每天一条，把网上散落的冷知识收成固定栏目"
+  mode: series
+
+keyword_strategy:
+  seed_keywords:
+    - "人体冷知识"
+  scene_hints:
+    - "感官"
+    - "骨骼"
+    - "血液"
+    - "睡眠"
+    - "消化"
+    - "皮肤"
+  search_volume:
+    min: 0
+    max: 0
+  keyword_difficulty:
+    max: 100
+  exclusions: []
+
+content_strategy:
+  types:
+    - name: "冷知识卡片"
+      priority: 1
+  word_count:
+    min: 80
+    max: 520
+  evidence_requirements:
+    min_urls: 1
+    min_data_points: 0
+  product_mention:
+    max_count: 0
+    position: "ending"
+
+knowledge_base:
+  source: "knowledge_base/coldfact/"
+  main_file: "voice.md"
+
+quality_gates:
+  keyword_gate:
+    enabled: false
+    require_question_type: false
+    check_existing_titles: true
+  claim_gate:
+    enabled: false
+    max_product_mentions: 0
+
+seo:
+  keyword_density:
+    min: 0
+    max: 1
+  internal_links:
+    enabled: false
+    anchor_text: ""
+    target_url: ""
+  meta:
+    title_max_length: 60
+    description_max_length: 160
+
+publishing:
+  # 仓库根下的 series/，不进 docs/，避免跟 yibelin 静态站绑在一起。
+  output_dir: "series/coldfact/"
+  static_site_origin: "https://zwtyai.github.io/seo-agent-series/coldfact"
+  wordpress:
+    enabled: false
+  github:
+    enabled: true
+    repo: "zwtyai/seo-agent"
+    branch: "main"
+    docs_dir: "series/coldfact"
+
+monitoring:
+  gsc:
+    enabled: false
+
+agents:
+  researcher:
+    temperature: 0.4
+    use_grounding: true
+  writer:
+    temperature: 0.7
+    style: "curious"
+  editor:
+    temperature: 0.3
+    strictness: "low"
