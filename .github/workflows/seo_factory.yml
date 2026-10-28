@@ -90,12 +90,8 @@ jobs:
         if [ -d outputs ]; then
           git add outputs/
         fi
-        # 系列栏目（如冷知识）在 series/，故意不进 docs/，以免跟 yibelin 官网代理目录混在一起。
-        if [ -d series ]; then
-          git add series/
-        fi
         if git diff --staged --quiet; then
-          echo "No docs/ or series/ changes to commit"
+          echo "No docs/ changes to commit"
           exit 0
         fi
         branch="chore/seo-docs-${GITHUB_RUN_ID}"
