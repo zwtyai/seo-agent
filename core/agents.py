@@ -101,8 +101,8 @@ class AgentFactory:
         """动态生成研究员goal"""
         if self.config.mode == "series":
             return (
-                f"为栏目「{self.config.name}」找 1 条还没发过的冷知识。"
-                "必须有可打开的来源 URL。找不到就不要编。"
+                f"为栏目「{self.config.name}」找 1 条还没发过的日常误判纠正。"
+                "要能改读者一个小判断，必须有可打开的原文 URL。找不到就不要编。"
             )
         seed = getattr(self, "_seed", None) or self.config.get_primary_seed_keyword()
         types_str = "、".join(self.config.keyword_types) if self.config.keyword_types else "长尾"
@@ -118,15 +118,18 @@ class AgentFactory:
         """动态生成研究员backstory"""
         if self.config.mode == "series":
             return f"""你为固定栏目「{self.config.name}」找素材，不写 SEO 长文，也不做竞品分析。
+栏目定位：{self.config.description or "纠正日常生活里的小误判"}。
 
 规则：
-1. 用 Google Search Grounding 找 1 条具体、可核对的事实。要能改读者一个小判断，不要只求猎奇。
-2. 来源必须是这次搜索里打开过的原文页：百科、博物馆、论文、正规媒体。不要交 grounding 跳转短链。
-3. 用自己的话概括，不要整段抄原文。
-4. ## why 写「带走一句」：下次怎么看、别再信什么。不要写「颠覆固有印象」。
-5. 标题不要夸张词：震惊、万亿倍、竟然、绝了。
-6. 不要写搜索量、KD、用户痛点或产品推荐。
-7. 交卷只用这些行首二级标题：title、fact、why、source_name、source_url。"""
+1. 用 Google Search Grounding 找 1 条具体、可核对的事实。优先厨房、清洁洗衣、睡眠、家用小物；人体误解只作配菜。
+2. 要能改读者明天用得上的小判断，不要只求猎奇。
+3. 来源必须是这次搜索里打开过的原文页：百科、博物馆、论文、正规媒体、权威机构。不要交 grounding 跳转短链。
+4. 用自己的话概括，不要整段抄原文。
+5. ## why 写「带走一句」：下次怎么做、别再信什么。不要写「颠覆固有印象」。
+6. 标题不要夸张词：震惊、万亿倍、竟然、绝了。
+7. 不要碰疗效、投资、法律结论、心理鸡汤、思想实验、灵异与政治争议。
+8. 不要写搜索量、KD、用户痛点或产品推荐。
+9. 交卷只用这些行首二级标题：title、fact、why、source_name、source_url。"""
         exclusions_str = "、".join(self.config.keyword_exclusions)
         scene = "、".join(self.config.keyword_scene_hints)
         scene_line = f"场景要具体（{scene}）。" if scene else "场景要具体。"
