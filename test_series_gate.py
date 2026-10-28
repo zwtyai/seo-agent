@@ -41,7 +41,7 @@ class SeriesGateTest(unittest.TestCase):
         yibelin = ProductConfig.load("yibelin")
         self.assertEqual(coldfact.mode, "series")
         self.assertEqual(yibelin.mode, "seo")
-        self.assertEqual(coldfact.publishing_output_dir, "series/coldfact/")
+        self.assertEqual(coldfact.publishing_output_dir, "docs/series/coldfact/")
         voice = KnowledgeBaseLoader(coldfact).load()
         self.assertEqual(voice["type"], "series_voice")
         self.assertIn("一张卡片", voice["content"])

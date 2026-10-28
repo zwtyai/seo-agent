@@ -3,8 +3,9 @@
 product:
   id: "coldfact"
   name: "每日冷知识"
-  # 独立于 docs/。docs/ 以后会代理进 yibelin 官网，冷知识不能混进去。
-  domain: "https://zwtyai.github.io/seo-agent-series/coldfact/"
+  # Pages 源是 /docs，公网路径对应 docs/series/coldfact/。
+  # 官网反代 docs/ 时请排除 /series/，避免冷知识进 yibelin。
+  domain: "https://zwtyai.github.io/seo-agent/series/coldfact/"
   description: "每天一条，把网上散落的冷知识收成固定栏目"
   mode: series
 
@@ -65,16 +66,15 @@ seo:
     description_max_length: 160
 
 publishing:
-  # 仓库根下的 series/，不进 docs/，避免跟 yibelin 静态站绑在一起。
-  output_dir: "series/coldfact/"
-  static_site_origin: "https://zwtyai.github.io/seo-agent-series/coldfact"
+  output_dir: "docs/series/coldfact/"
+  static_site_origin: "https://zwtyai.github.io/seo-agent/series/coldfact"
   wordpress:
     enabled: false
   github:
     enabled: true
     repo: "zwtyai/seo-agent"
     branch: "main"
-    docs_dir: "series/coldfact"
+    docs_dir: "docs"
 
 monitoring:
   gsc:
