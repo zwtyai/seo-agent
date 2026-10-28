@@ -1,4 +1,0 @@
-User-agent: *
-Allow: /
-
-Sitemap: https://zwtyai.github.io/seo-agent-series/coldfact/sitemap.xml
