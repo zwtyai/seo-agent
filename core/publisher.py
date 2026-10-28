@@ -39,7 +39,7 @@ class MultiPublisher:
                 results["html"] = str(html_path)
             except Exception as e:
                 results["html_error"] = str(e)
-        
+
         # 2. WordPress（可选）
         if self.config.publishing_wordpress_enabled:
             try:
@@ -47,7 +47,16 @@ class MultiPublisher:
                 results["wordpress"] = wp_url
             except Exception as e:
                 results["wordpress_error"] = str(e)
-        
+
+        # 3. 小红书文案（只落盘，不自动发帖）
+        xhs_note = (metadata.get("xhs_note") or "").strip()
+        if self.config.publishing_xiaohongshu_enabled and xhs_note:
+            try:
+                xhs_path = self._publish_xhs_note(xhs_note, results.get("html", ""))
+                results["xiaohongshu"] = str(xhs_path)
+            except Exception as e:
+                results["xiaohongshu_error"] = str(e)
+
         return results
     
     def _publish_static_html(self, markdown: str, metadata: dict) -> Path:
@@ -78,6 +87,25 @@ class MultiPublisher:
         
         return html_path
     
+    def _publish_xhs_note(self, xhs_markdown: str, html_path: str) -> Path:
+        """把小红书结构化文案和可粘贴版写到与静态页同目录。"""
+        from core.gates import format_xhs_copy_paste
+
+        if html_path:
+            base = Path(html_path).with_suffix("")
+        else:
+            output_dir = self.config.get_output_dir() / "posts"
+            output_dir.mkdir(parents=True, exist_ok=True)
+            title = self._extract_title(xhs_markdown) or "xhs-note"
+            safe = "".join(ch if ch.isalnum() or ch in "-_" else "-" for ch in title)[:40]
+            base = output_dir / (safe or "xhs-note")
+
+        structured = base.with_name(base.name + ".xhs.md")
+        copy_paste = base.with_name(base.name + ".xhs.txt")
+        structured.write_text(xhs_markdown.strip() + "\n", encoding="utf-8")
+        copy_paste.write_text(format_xhs_copy_paste(xhs_markdown), encoding="utf-8")
+        return copy_paste
+
     def _publish_wordpress(self, markdown: str, metadata: dict) -> str:
         """
         发布到WordPress

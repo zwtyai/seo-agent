@@ -13,3 +13,14 @@ GitHub Pages 源是仓库的 `/docs`，所以系列页必须写在这里，公�
 ```bash
 python main.py --product coldfact --step all
 ```
+
+会同时产出：
+
+- 站内卡片：`docs/series/coldfact/posts/*.html`
+- 小红书文案（不自动发帖）：同目录 `*.xhs.md` / `*.xhs.txt`
+
+只生成小红书文案：
+
+```bash
+python main.py --product coldfact --step xhs
+```

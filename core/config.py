@@ -74,6 +74,9 @@ class ProductConfig:
     publishing_github_enabled: bool = True
     publishing_github_repo: str = ""
     publishing_wordpress_enabled: bool = False
+    # 只生成小红书文案，不自动发帖。
+    publishing_xiaohongshu_enabled: bool = False
+    publishing_xiaohongshu_tags: list[str] = field(default_factory=list)
     
     # 监控配置
     monitoring_gsc_enabled: bool = False
@@ -199,6 +202,10 @@ class ProductConfig:
             publishing_github_enabled=github.get("enabled", True),
             publishing_github_repo=github.get("repo", ""),
             publishing_wordpress_enabled=wordpress.get("enabled", False),
+            publishing_xiaohongshu_enabled=publishing.get("xiaohongshu", {}).get("enabled", False),
+            publishing_xiaohongshu_tags=list(
+                publishing.get("xiaohongshu", {}).get("tags") or []
+            ),
             
             # 监控配置
             monitoring_gsc_enabled=gsc.get("enabled", False),

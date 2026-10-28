@@ -75,6 +75,13 @@ publishing:
     repo: "zwtyai/seo-agent"
     branch: "main"
     docs_dir: "docs"
+  # 只生成可复制粘贴的小红书笔记，不自动发帖。
+  xiaohongshu:
+    enabled: true
+    tags:
+      - "每日冷知识"
+      - "人体冷知识"
+      - "冷知识分享"
 
 monitoring:
   gsc:

@@ -220,7 +220,7 @@ class QualityGateSystem:
         existing_titles: list[str] | None = None,
         existing_docs: list[str] | None = None,
     ) -> tuple[bool, str]:
-        """系列选题：一条事实、一句理由、一个可打开的来源。"""
+        """系列选题：一条事实、带走一句、一个可打开的原文来源。"""
         problems: list[str] = []
         text = _strip_fence(markdown)
         sections = self._parse_sections(text)
@@ -232,12 +232,18 @@ class QualityGateSystem:
 
         if len(title) < 4:
             problems.append("缺少 ## title，用一句话写出这条冷知识的标题。")
+        else:
+            problems.extend(self._series_title_problems(title))
         if len(fact) < 8:
             problems.append("缺少 ## fact，用自己的话写清这条事实。")
         if len(why) < 4:
-            problems.append("缺少 ## why，用一句说明它哪里和日常印象相反。")
+            problems.append("缺少 ## why，写一句可带走的小判断。")
+        else:
+            problems.extend(self._series_takeaway_problems(why))
         if not source_url:
-            problems.append("缺少 ## source_url。写一个 http 开头的来源页，找不到就不要交这条。")
+            problems.append("缺少 ## source_url。写一个 http 开头的原文页，找不到就不要交这条。")
+        else:
+            problems.extend(self._series_source_problems(source_url))
 
         folded_title = self._strip_issue_prefix(self._normalize_text(title))
         if folded_title and existing_titles:
@@ -264,7 +270,7 @@ class QualityGateSystem:
         existing_titles: list[str] | None = None,
         source_url: str = "",
     ) -> tuple[bool, str]:
-        """系列成稿：短卡片、带来源、不重复、不写据说。"""
+        """系列成稿：短卡片、带走一句、原文来源、不重复、不吓人。"""
         problems: list[str] = []
         text = _strip_fence(markdown)
         title = ""
@@ -274,10 +280,23 @@ class QualityGateSystem:
                 break
         if not title:
             problems.append("第一行写成 # 标题。")
+        else:
+            problems.extend(self._series_title_problems(title))
 
         url = source_url or _first_url(text)
         if not url or url not in text:
             problems.append("正文要保留简报里的来源 URL，写成「来源：[站点名](URL)」。")
+        elif url:
+            problems.extend(self._series_source_problems(url))
+
+        takeaway = self._series_takeaway_from_card(text)
+        if not takeaway:
+            problems.append(
+                "加一行「带走一句：…」，写下次怎么看或别再信什么。"
+                "不要只写「颠覆了固有印象」。"
+            )
+        else:
+            problems.extend(self._series_takeaway_problems(takeaway))
 
         hearsay = re.findall(r"据说|网传|听说|据传|坊间", text)
         if hearsay:
@@ -305,6 +324,116 @@ class QualityGateSystem:
             return False, "卡片未通过，请改写：\n- " + "\n- ".join(problems)
         return True, text
 
+    def _series_title_problems(self, title: str) -> list[str]:
+        hits = re.findall(
+            r"震惊|绝了|万亿倍|竟然|太可怕|秒懂|刷屏|你绝对不知道|颠覆认知",
+            title or "",
+        )
+        if hits:
+            return ["标题删掉这些夸张词：" + "、".join(dict.fromkeys(hits))]
+        return []
+
+    def _series_takeaway_problems(self, takeaway: str) -> list[str]:
+        text = (takeaway or "").strip()
+        if re.search(
+            r"颠覆了?(我们)?(的)?固有印象|完全颠覆|简直颠覆|颠覆了我们从小|反常识感叹",
+            text,
+        ):
+            return [
+                "「带走一句」不要只感叹颠覆印象。"
+                "改成下次怎么看、别再信什么，例如「别再按舌尖分区教味觉」。"
+            ]
+        if not re.search(
+            r"下次|别再|不要再|可以|其实|不必|不用|别把|别信|留意|注意|改成|当成",
+            text,
+        ):
+            return [
+                "「带走一句」要具体到日常判断。"
+                "用「下次 / 别再 / 可以」这类说法，不要空赞叹。"
+            ]
+        return []
+
+    def _series_source_problems(self, url: str) -> list[str]:
+        if "vertexaisearch.cloud.google.com/grounding-api-redirect" in (url or ""):
+            return ["来源不要用 grounding 跳转链。换成百科、论文或媒体的原文 URL。"]
+        return []
+
+    @staticmethod
+    def _series_takeaway_from_card(markdown: str) -> str:
+        """从卡片正文取出「带走一句」或旧版「为什么值得说」。"""
+        for line in (markdown or "").splitlines():
+            stripped = line.strip()
+            for prefix in ("带走一句：", "带走一句:", "为什么值得说：", "为什么值得说:"):
+                if stripped.startswith(prefix):
+                    return stripped[len(prefix):].strip()
+        return ""
+
+    def validate_xhs_note(
+        self,
+        markdown: str,
+        required_tags: list[str] | None = None,
+    ) -> tuple[bool, str]:
+        """小红书笔记文案：封面、标题、短正文、标签；不自动发帖。"""
+        problems: list[str] = []
+        text = _strip_fence(markdown)
+        sections = self._parse_sections(text)
+
+        cover_title = _first_line(sections.get("cover_title", ""))
+        cover_hook = _first_line(sections.get("cover_hook", ""))
+        title = _first_line(sections.get("title", ""))
+        body = (sections.get("body") or "").strip()
+        tags = (sections.get("tags") or "").strip()
+        source_note = _first_line(sections.get("source_note", ""))
+
+        if not (4 <= len(re.sub(r"\s+", "", cover_title)) <= 18):
+            problems.append("## cover_title 要有内容，去空白后不超过 18 字，方便做封面大字。")
+        else:
+            problems.extend(self._series_title_problems(cover_title))
+
+        if len(cover_hook) < 4:
+            problems.append("缺少 ## cover_hook，写一句封面副行。")
+
+        if len(title) < 4:
+            problems.append("缺少 ## title，写可搜索的笔记标题。")
+        else:
+            problems.extend(self._series_title_problems(title))
+
+        body_plain = re.sub(r"\s+", "", body)
+        if len(body_plain) < 40:
+            problems.append("## body 太短。先钩子，再事实，再带走一句。")
+        if len(body_plain) > 600:
+            problems.append("## body 太长。删到适合小红书刷读的短笔记。")
+        if re.search(r"https?://", body):
+            problems.append("正文不要放外链。来源只写在 ## source_note。")
+        if "带走一句" not in body and not re.search(
+            r"下次|别再|不要再|可以|其实|不必|不用|别把|别信|留意|注意",
+            body,
+        ):
+            problems.append("正文里要有可带走的一句（下次 / 别再 / 可以…）。")
+
+        problems.extend(self._series_title_problems(body))
+
+        hearsay = re.findall(r"据说|网传|听说|据传|坊间", text)
+        if hearsay:
+            problems.append("删掉没有来源的说法：" + "、".join(dict.fromkeys(hearsay)))
+
+        tag_tokens = re.findall(r"#([^\s#]+)", tags)
+        if len(tag_tokens) < 2:
+            problems.append("## tags 至少写 2 个 #标签。")
+        for required in required_tags or []:
+            label = required.lstrip("#")
+            if label and label not in tag_tokens:
+                problems.append(f"## tags 要包含 #{label}。")
+
+        if len(source_note) < 2:
+            problems.append("缺少 ## source_note，写「来源：站点名」，不要贴长 URL。")
+        elif re.search(r"https?://", source_note):
+            problems.append("## source_note 只写站点名，不要 URL。")
+
+        if problems:
+            return False, "小红书文案未通过，请改写：\n- " + "\n- ".join(problems)
+        return True, text
+
     @staticmethod
     def _strip_issue_prefix(text: str) -> str:
         return re.sub(r"^第\d+期[·•:：\-]*", "", text or "")
@@ -321,12 +450,12 @@ class QualityGateSystem:
             name = re.sub(r"（.*?）|\(.*?\)", "", lines[0]).strip().lower()
             sections[name] = "\n".join(lines[1:]).strip()
         return sections
-    
+
     @staticmethod
     def _normalize_text(text: str) -> str:
         """规范化文本用于比较"""
         return re.sub(r"[\s\-—_，。、""\"'？?]+", "", text).lower()
-    
+
     @staticmethod
     def _scaled_number(raw: str, suffix: str | None) -> int:
         """转换带单位的数字"""
@@ -334,6 +463,36 @@ class QualityGateSystem:
         if suffix:
             number *= 1000
         return int(round(number))
+
+
+def format_xhs_copy_paste(markdown: str) -> str:
+    """把结构化小红书文案收成可直接粘贴的笔记正文。"""
+    sections = QualityGateSystem._parse_sections(_strip_fence(markdown))
+    title = _first_line(sections.get("title", ""))
+    body = (sections.get("body") or "").strip()
+    tags = (sections.get("tags") or "").strip()
+    source_note = _first_line(sections.get("source_note", ""))
+    cover_title = _first_line(sections.get("cover_title", ""))
+    cover_hook = _first_line(sections.get("cover_hook", ""))
+
+    parts = []
+    if title:
+        parts.append(title)
+        parts.append("")
+    if body:
+        parts.append(body)
+        parts.append("")
+    if tags:
+        parts.append(tags)
+        parts.append("")
+    if source_note:
+        parts.append(source_note)
+        parts.append("")
+    parts.append("---")
+    parts.append(f"封面大字：{cover_title}" if cover_title else "封面大字：")
+    parts.append(f"封面副行：{cover_hook}" if cover_hook else "封面副行：")
+    parts.append("（以上为制作封面用，发帖时可删掉分隔线后的说明）")
+    return "\n".join(parts).strip() + "\n"
 
 
 _FENCE_RE = re.compile(r"^```(?:markdown|md)?\s*\n(.*)\n```\s*$", re.DOTALL)
