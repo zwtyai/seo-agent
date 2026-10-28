@@ -501,26 +501,28 @@ def create_series_find_task(
 {_format_existing_titles(existing_titles)}
 
 规则：
-1. 用 Google Search Grounding 找一条具体事实。要能让人「咦」一下，但不要猎奇谣言。
-2. 来源必须是这次搜索打开过的页面。百科、博物馆、论文摘要、正规媒体都可以。
+1. 用 Google Search Grounding 找一条具体事实。要能改读者一个小判断，不要只求猎奇谣言。
+2. 来源必须是这次搜索打开过的原文页。百科、博物馆、论文摘要、正规媒体都可以。不要交 grounding 跳转短链。
 3. 用自己的话写事实，不要整段抄原文。
-4. 找不到可打开的页面，就不要换一个编出来的 URL。## source_url 下面写「未找到」。
-5. 不要写搜索量、关键词难度、竞品、产品。
+4. ## why 写「带走一句」：下次怎么看、别再信什么。不要写「颠覆固有印象」。
+5. 标题不要夸张：震惊、万亿倍、竟然、绝了、你绝对不知道。
+6. 找不到可打开的原文页，就不要换一个编出来的 URL。## source_url 下面写「未找到」。
+7. 不要写搜索量、关键词难度、竞品、产品。
 
 【输出格式】每个小节都是单独一行、行首的二级标题。
 
 ## title
-（一句话标题，不要写期号）
+（一句话标题，不要写期号，不要夸张词）
 ## fact
 （两三句，说清事实本身）
 ## why
-（一句，它和日常印象哪里相反）
+（带走一句：下次怎么看、别再信什么）
 ## source_name
 （来源站点或文章名）
 ## source_url
-（一个 http 开头的 URL）
+（一个可打开的原文 URL，不要 grounding 跳转链）
 """
-    expected_output = "一条冷知识简报：标题、事实、一句理由、来源名、可打开的 URL。"
+    expected_output = "一条冷知识简报：标题、事实、带走一句、来源名、可打开的原文 URL。"
 
     def brief_guardrail(output) -> tuple[bool, str]:
         text = getattr(output, "raw", None) or str(output)
@@ -561,19 +563,20 @@ def create_series_write_task(
 
 # 标题
 事实写两三句，用自己的话。
-为什么值得说：一句，点出和日常印象相反的地方，不展开证明。
+带走一句：下次怎么看、别再信什么。不要只写「颠覆了固有印象」。
 来源：[这里写简报里的来源名]({source_url})
 
 要求：
-1. H1 只写标题，不要自己加「第 N 期」。
+1. H1 只写标题，不要自己加「第 N 期」，不要夸张词。
 2. 来源那一行必须原样带上这个 URL：{source_url}
 3. 不要写据说、网传、听说。
 4. 不要写步骤、评测、搜索量或产品推荐。
 5. 简报里没有的数字和人物不要补。
+6. 「带走一句」要具体，读者读完能用。
 """
     expected_output = (
         f"{config.word_count_min}-{config.word_count_max} 字的 Markdown 卡片："
-        "标题、事实、一句理由、带来源链接。"
+        "标题、事实、带走一句、带来源链接。"
     )
 
     def card_guardrail(output) -> tuple[bool, str]:

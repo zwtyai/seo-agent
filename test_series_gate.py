@@ -20,15 +20,18 @@ def _config() -> ProductConfig:
     )
 
 
-def _card(title: str = "香蕉在植物学里算浆果", hearsay: str = "") -> str:
-    extra = hearsay or "超市里的水果分类，和植物学不是同一套标准。"
+def _card(
+    title: str = "香蕉在植物学里算浆果",
+    takeaway: str = "下次别把超市分类当成植物学结论。",
+    source: str = "https://www.britannica.com/plant/banana",
+) -> str:
     return f"""# {title}
 
 植物学里，香蕉由一朵花的子房发育而来，因此被算作浆果。草莓的可食部分主要来自花托，不算浆果。
 
-为什么值得说：{extra}
+带走一句：{takeaway}
 
-来源：[不列颠百科](https://www.britannica.com/plant/banana)
+来源：[不列颠百科]({source})
 """
 
 
@@ -44,20 +47,45 @@ class SeriesGateTest(unittest.TestCase):
         self.assertEqual(coldfact.publishing_output_dir, "docs/series/coldfact/")
         voice = KnowledgeBaseLoader(coldfact).load()
         self.assertEqual(voice["type"], "series_voice")
-        self.assertIn("一张卡片", voice["content"])
+        self.assertIn("带走一句", voice["content"])
 
     def test_brief_requires_a_real_url(self):
         ok, message = self.gate.validate_series_brief(
             "## title\n香蕉算浆果\n## fact\n香蕉由子房发育而来，植物学上算浆果。\n"
-            "## why\n和日常叫法相反\n## source_name\n百科\n## source_url\n未找到\n"
+            "## why\n下次别把超市分类当成植物学结论。\n"
+            "## source_name\n百科\n## source_url\n未找到\n"
         )
         self.assertFalse(ok)
         self.assertIn("source_url", message)
 
+    def test_brief_rejects_empty_takeaway_and_hype_title(self):
+        ok, message = self.gate.validate_series_brief(
+            "## title\n香蕉灵敏万亿倍\n"
+            "## fact\n香蕉由子房发育而来，植物学上算浆果。\n"
+            "## why\n这完全颠覆了我们的固有印象。\n"
+            "## source_name\n百科\n"
+            "## source_url\nhttps://www.britannica.com/plant/banana\n"
+        )
+        self.assertFalse(ok)
+        self.assertIn("夸张词", message)
+        self.assertIn("带走一句", message)
+
+    def test_brief_rejects_grounding_redirect(self):
+        ok, message = self.gate.validate_series_brief(
+            "## title\n香蕉算浆果\n"
+            "## fact\n香蕉由子房发育而来，植物学上算浆果。\n"
+            "## why\n下次别把超市分类当成植物学结论。\n"
+            "## source_name\n搜索结果\n"
+            "## source_url\nhttps://vertexaisearch.cloud.google.com/grounding-api-redirect/abc\n"
+        )
+        self.assertFalse(ok)
+        self.assertIn("跳转", message)
+
     def test_brief_rejects_a_fact_already_published(self):
         fact = "香蕉由子房发育而来，植物学上算浆果。"
         ok, message = self.gate.validate_series_brief(
-            f"## title\n香蕉算浆果\n## fact\n{fact}\n## why\n和日常叫法相反\n"
+            f"## title\n香蕉算浆果\n## fact\n{fact}\n"
+            "## why\n下次别把超市分类当成植物学结论。\n"
             "## source_name\n百科\n## source_url\nhttps://www.britannica.com/plant/banana\n",
             existing_docs=[f"# 旧文\n\n{fact}\n"],
         )
@@ -65,7 +93,9 @@ class SeriesGateTest(unittest.TestCase):
         self.assertIn("已经发过", message)
 
     def test_card_rejects_hearsay_and_missing_source(self):
-        ok, message = self.gate.validate_series_card(_card(hearsay="据说草莓不是水果。"))
+        ok, message = self.gate.validate_series_card(
+            _card(takeaway="据说下次草莓不是水果。")
+        )
         self.assertFalse(ok)
         self.assertIn("据说", message)
 
@@ -73,6 +103,13 @@ class SeriesGateTest(unittest.TestCase):
         ok, message = self.gate.validate_series_card(thin, source_url="https://example.com/a")
         self.assertFalse(ok)
         self.assertIn("来源", message)
+
+    def test_card_rejects_empty_takeaway(self):
+        ok, message = self.gate.validate_series_card(
+            _card(takeaway="这完全颠覆了我们的固有印象。")
+        )
+        self.assertFalse(ok)
+        self.assertIn("带走一句", message)
 
     def test_card_passes_and_issue_number_is_stamped(self):
         source = "https://www.britannica.com/plant/banana"

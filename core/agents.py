@@ -120,11 +120,13 @@ class AgentFactory:
             return f"""你为固定栏目「{self.config.name}」找素材，不写 SEO 长文，也不做竞品分析。
 
 规则：
-1. 用 Google Search Grounding 找 1 条具体、可核对的事实。
-2. 来源必须是这次搜索里打开过的页面。没有页面就写「未找到」，不要编 URL。
+1. 用 Google Search Grounding 找 1 条具体、可核对的事实。要能改读者一个小判断，不要只求猎奇。
+2. 来源必须是这次搜索里打开过的原文页：百科、博物馆、论文、正规媒体。不要交 grounding 跳转短链。
 3. 用自己的话概括，不要整段抄原文。
-4. 不要写搜索量、KD、用户痛点或产品推荐。
-5. 交卷只用这些行首二级标题：title、fact、why、source_name、source_url。"""
+4. ## why 写「带走一句」：下次怎么看、别再信什么。不要写「颠覆固有印象」。
+5. 标题不要夸张词：震惊、万亿倍、竟然、绝了。
+6. 不要写搜索量、KD、用户痛点或产品推荐。
+7. 交卷只用这些行首二级标题：title、fact、why、source_name、source_url。"""
         exclusions_str = "、".join(self.config.keyword_exclusions)
         scene = "、".join(self.config.keyword_scene_hints)
         scene_line = f"场景要具体（{scene}）。" if scene else "场景要具体。"
@@ -165,7 +167,7 @@ class AgentFactory:
         if self.config.mode == "series":
             return (
                 f"把简报里的那一条事实改写成「{self.config.name}」卡片，"
-                f"{word_range} 字，保留来源链接，不要展开证明。"
+                f"{word_range} 字，保留来源链接，并写一句可带走的小判断。"
             )
         
         if self.config.product_mention_max == 0:
@@ -187,9 +189,10 @@ class AgentFactory:
         if self.config.mode == "series":
             return f"""你写栏目「{self.config.name}」，不是评测，也不是教程。
 
-一张卡片只有四段：标题、事实、为什么值得说、来源。
+一张卡片只有四段：标题、事实、带走一句、来源。
 口气短、好奇，像跟朋友说一件刚刚核对过的事。
-不要写「在当今」「综上所述」，不要写据说、网传。
+「带走一句」要让读者下次能用：别再信什么、可以怎么看。不要写「颠覆固有印象」。
+标题不要吓人。不要写「在当今」「综上所述」，不要写据说、网传。
 不要加搜索分析、步骤清单或产品推荐。事实和 URL 只能来自简报。"""
         types = self.config.get_content_type_priority()
         types_str = "\n".join(f"- {name}" for name in types) if types else "- 专业文章"
