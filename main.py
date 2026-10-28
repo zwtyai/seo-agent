@@ -21,7 +21,7 @@ from core import (
     ProductConfig,
     QualityGateSystem,
 )
-from core.gates import _first_url, stamp_series_issue
+from core.gates import _first_url, format_xhs_copy_paste, stamp_series_issue
 from publish_and_monitor import gsc_research_notes
 from static_publish import (
     least_used_content_type,
@@ -40,6 +40,7 @@ STEP_FILES = {
     "keyword": "01-keyword.md",
     "write": "02-draft.md",
     "edit": "03-final.md",
+    "xhs": "04-xhs.md",
 }
 
 
@@ -676,16 +677,100 @@ def run_series_finalize(config: ProductConfig, gate_system: QualityGateSystem) -
     return text
 
 
+def create_xhs_note_task(
+    writer,
+    config: ProductConfig,
+    gate_system: QualityGateSystem,
+    card: str,
+    voice: str,
+) -> Task:
+    """把站内卡片改写成小红书笔记文案。只生成，不发帖。"""
+    required_tags = config.publishing_xiaohongshu_tags or [config.name]
+    tags_line = " ".join(
+        f"#{tag.lstrip('#')}" for tag in required_tags if str(tag).strip()
+    )
+    description = f"""把下面这张站内卡片改写成小红书笔记文案。不要再搜索，不要换事实，不要自动发帖。
+
+【站内卡片】
+{card}
+
+【栏目语气】
+{voice or "短、口语、有带走一句。"}
+
+要求：
+1. 封面大字 ≤18 字，说清事实，不要夸张词。
+2. 封面副行一句，把人留住。
+3. 笔记标题可搜索，像正常人说话。
+4. 正文短段+空行：钩子 → 事实 → 带走一句。正文不要外链。
+5. 标签必须包含：{tags_line}；可再加 1-3 个相关词。
+6. 来源备注只写站点名，例如「来源：维基百科」，不要 URL。
+7. 不要写据说、网传、震惊、万亿倍。
+
+【输出格式】
+
+## cover_title
+## cover_hook
+## title
+## body
+## tags
+## source_note
+"""
+    expected_output = "一份可复制到小红书的笔记文案：封面、标题、正文、标签、来源备注。"
+
+    def xhs_guardrail(output) -> tuple[bool, str]:
+        text = getattr(output, "raw", None) or str(output)
+        return gate_system.validate_xhs_note(
+            text,
+            required_tags=required_tags,
+        )
+
+    return Task(
+        description=description,
+        expected_output=expected_output,
+        agent=writer,
+        guardrail=xhs_guardrail,
+        guardrail_max_retries=1,
+    )
+
+
+def run_series_xhs(
+    config: ProductConfig,
+    factory: AgentFactory,
+    gate_system: QualityGateSystem,
+) -> str:
+    """系列：站内卡片 → 小红书文案（不发帖）。"""
+    if not config.publishing_xiaohongshu_enabled:
+        raise SystemExit(
+            f"{config.name} 未开启 publishing.xiaohongshu.enabled，不必生成小红书文案。"
+        )
+    print(f"[{config.name}] 小红书：卡片 → 笔记文案（不发帖）")
+    card = _load_step(config, "edit")
+    voice = factory.kb_loader.load().get("content", "")
+    writer = factory.create_writer()
+    task = create_xhs_note_task(writer, config, gate_system, card, voice)
+    text = _kickoff([writer], [task], {})
+    path = _save_step(config, "xhs", text)
+    _show_step("xhs", path, text)
+    copy_path = config.get_run_dir() / "04-xhs.copy.txt"
+    copy_path.write_text(format_xhs_copy_paste(text), encoding="utf-8")
+    print(f"小红书文案已保存: {path}")
+    print(f"可粘贴版: {copy_path}")
+    print(f"下一步：python main.py --product {config.id} --step publish")
+    return text
+
+
 def run_series_all(
     config: ProductConfig,
     factory: AgentFactory,
     gate_system: QualityGateSystem,
     publisher: MultiPublisher,
 ) -> dict:
-    """系列完整流程：找一条 → 卡片 → 发布。"""
-    print(f"[{config.name}] 完整流程：找一条 → 卡片 → 发布\n")
+    """系列完整流程：找一条 → 卡片 → 小红书文案 → 发布。"""
+    print(f"[{config.name}] 完整流程：找一条 → 卡片 → 小红书文案 → 发布\n")
     run_series_find(config, factory, gate_system)
     run_series_write(config, factory, gate_system)
+    if config.publishing_xiaohongshu_enabled:
+        run_series_xhs(config, factory, gate_system)
     return run_publish(config, publisher)
 
 
@@ -772,11 +857,15 @@ def run_publish(config: ProductConfig, publisher: MultiPublisher) -> dict:
     print(f"📤 [{config.name}] 发布：终稿 → 静态HTML")
     
     final = _load_step(config, "edit")
-    
-    results = publisher.publish(
-        final,
-        metadata={"seed_keyword": config.get_primary_seed_keyword()}
-    )
+    metadata = {"seed_keyword": config.get_primary_seed_keyword()}
+    if config.publishing_xiaohongshu_enabled:
+        xhs_path = _step_path(config, "xhs")
+        if xhs_path.is_file():
+            metadata["xhs_note"] = xhs_path.read_text(encoding="utf-8")
+        else:
+            print("未找到小红书文案，跳过 .xhs 落盘。可先跑 --step xhs。")
+
+    results = publisher.publish(final, metadata=metadata)
     
     for channel, result in results.items():
         if "error" in channel:
@@ -811,9 +900,9 @@ def main():
     )
     parser.add_argument(
         "--step",
-        choices=("keyword", "write", "edit", "publish", "all"),
+        choices=("keyword", "write", "edit", "xhs", "publish", "all"),
         default="all",
-        help="执行步骤"
+        help="执行步骤；xhs 仅系列栏目生成小红书文案"
     )
     parser.add_argument(
         "--list-products",
@@ -874,6 +963,7 @@ def main():
             "keyword": lambda: run_series_find(config, factory, gate_system),
             "write": lambda: run_series_write(config, factory, gate_system),
             "edit": lambda: run_series_finalize(config, gate_system),
+            "xhs": lambda: run_series_xhs(config, factory, gate_system),
             "publish": lambda: run_publish(config, publisher),
             "all": lambda: run_series_all(config, factory, gate_system, publisher),
         }
@@ -882,6 +972,9 @@ def main():
             "keyword": lambda: run_keyword(config, factory, gate_system),
             "write": lambda: run_write(config, factory, gate_system),
             "edit": lambda: run_edit(config, factory, gate_system),
+            "xhs": lambda: (_ for _ in ()).throw(
+                SystemExit("xhs 步骤只用于 mode: series 的栏目，例如 coldfact。")
+            ),
             "publish": lambda: run_publish(config, publisher),
             "all": lambda: run_all(config, factory, gate_system, publisher),
         }
