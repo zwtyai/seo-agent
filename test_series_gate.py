@@ -3,7 +3,12 @@
 import unittest
 
 from core.config import ProductConfig
-from core.gates import QualityGateSystem, format_xhs_copy_paste, stamp_series_issue
+from core.gates import (
+    QualityGateSystem,
+    build_xhs_note_from_card,
+    format_xhs_copy_paste,
+    stamp_series_issue,
+)
 from core.knowledge_base import KnowledgeBaseLoader
 
 
@@ -189,6 +194,45 @@ class SeriesGateTest(unittest.TestCase):
         self.assertIn("#每日冷知识", paste)
         self.assertIn("#日常误判", paste)
         self.assertIn("封面大字：香蕉其实算浆果", paste)
+
+    def test_xhs_parser_accepts_inline_headers_and_card_fallback(self):
+        coldfact = ProductConfig.load("coldfact")
+        inline = """## cover_title: 大脑不是只用了10%
+## cover_hook: 别再信还有 90% 潜能
+## title: 人只用了10%大脑？这是谣言
+## body
+那个「人只用了 10% 大脑」的说法，其实站不住。
+
+清醒或睡觉时，大脑几乎所有区域都在工作，没有大片地方闲着。
+
+带走一句：别再信特殊方法能激活大脑剩余部分。
+## tags: #每日冷知识 #日常误判 #生活常识 #大脑
+## source_note: 来源：科普中国
+"""
+        ok, revised = self.gate.validate_xhs_note(
+            inline,
+            required_tags=coldfact.publishing_xiaohongshu_tags,
+        )
+        self.assertTrue(ok, revised)
+
+        card = """# 第 005 期 · 大脑不是只用了10%，它一直都在忙
+
+那个说人只用了10%大脑的说法，其实是个老谣言了。科学研究发现，我们大脑几乎所有区域都在持续工作。
+
+带走一句：别再相信那些说你有巨大大脑潜能待开发的说法了。
+
+来源：[科普中国-科学辟谣](https://www.kepuchina.cn/article/articleinfo?business_type=100&classify_id=1130&ar_id=391307)
+"""
+        built = build_xhs_note_from_card(card, coldfact.publishing_xiaohongshu_tags)
+        ok, revised = self.gate.validate_xhs_note(
+            built,
+            required_tags=coldfact.publishing_xiaohongshu_tags,
+        )
+        self.assertTrue(ok, revised)
+        self.assertIn("## cover_title", revised)
+        self.assertIn("#每日冷知识", revised)
+        self.assertIn("来源：科普中国-科学辟谣", revised)
+        self.assertNotIn("https://", QualityGateSystem._parse_sections(revised)["body"])
 
 
 if __name__ == "__main__":

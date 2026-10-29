@@ -385,8 +385,11 @@ class QualityGateSystem:
         tags = (sections.get("tags") or "").strip()
         source_note = _first_line(sections.get("source_note", ""))
 
-        if not (4 <= len(re.sub(r"\s+", "", cover_title)) <= 18):
-            problems.append("## cover_title 要有内容，去空白后不超过 18 字，方便做封面大字。")
+        cover_len = _visible_len(cover_title)
+        if not (4 <= cover_len <= 18):
+            problems.append(
+                f"## cover_title 要有内容，去空白和标点后 4-18 字（当前约 {cover_len} 字）。"
+            )
         else:
             problems.extend(self._series_title_problems(cover_title))
 
@@ -440,15 +443,39 @@ class QualityGateSystem:
 
     @staticmethod
     def _parse_sections(markdown: str) -> dict[str, str]:
-        """解析Markdown sections"""
+        """解析 Markdown sections。兼容「## key」换行写，或「## key: 内容」写在同一行。"""
         parts = re.split(r"(?m)^##\s+", markdown or "")
         sections: dict[str, str] = {}
         for part in parts[1:]:
             lines = part.splitlines()
             if not lines:
                 continue
-            name = re.sub(r"（.*?）|\(.*?\)", "", lines[0]).strip().lower()
-            sections[name] = "\n".join(lines[1:]).strip()
+            header = re.sub(r"（.*?）|\(.*?\)", "", lines[0]).strip()
+            # 「cover_title: 内容」或「cover_title 内容」
+            inline = re.match(
+                r"^([A-Za-z0-9_\u4e00-\u9fff]+)\s*[:：]\s*(.*)$",
+                header,
+            )
+            if inline:
+                name = inline.group(1).strip().lower()
+                first = inline.group(2).strip()
+                rest = "\n".join(lines[1:]).strip()
+                body = "\n".join(item for item in (first, rest) if item).strip()
+            else:
+                spaced = re.match(
+                    r"^([A-Za-z0-9_\u4e00-\u9fff]+)\s+(.+)$",
+                    header,
+                )
+                if spaced and spaced.group(1).lower() in _XHS_SECTION_NAMES:
+                    name = spaced.group(1).strip().lower()
+                    first = spaced.group(2).strip()
+                    rest = "\n".join(lines[1:]).strip()
+                    body = "\n".join(item for item in (first, rest) if item).strip()
+                else:
+                    name = header.strip().lower()
+                    body = "\n".join(lines[1:]).strip()
+            alias = _XHS_SECTION_ALIASES.get(name, name)
+            sections[alias] = body
         return sections
 
     @staticmethod
@@ -495,14 +522,91 @@ def format_xhs_copy_paste(markdown: str) -> str:
     return "\n".join(parts).strip() + "\n"
 
 
+def build_xhs_note_from_card(
+    card_markdown: str,
+    required_tags: list[str] | None = None,
+) -> str:
+    """从站内卡片直接拼一份合格的小红书结构文案。模型格式跑偏时的兜底。"""
+    text = _strip_fence(card_markdown)
+    title = ""
+    for line in text.splitlines():
+        if line.strip().startswith("# "):
+            title = _ISSUE_PREFIX_RE.sub("", line.strip()[2:].strip()).strip()
+            break
+    takeaway = QualityGateSystem._series_takeaway_from_card(text)
+    source_name = _source_name_from_card(text)
+    fact_lines: list[str] = []
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("# "):
+            continue
+        if stripped.startswith("来源：") or stripped.startswith("来源:"):
+            continue
+        if stripped.startswith("带走一句：") or stripped.startswith("带走一句:"):
+            continue
+        if stripped.startswith("为什么值得说：") or stripped.startswith("为什么值得说:"):
+            continue
+        fact_lines.append(stripped)
+    fact = "\n".join(fact_lines).strip() or (title or "一条日常误判")
+    cover = _clip_cover_title(title or "日常误判")
+    hook = _short_hook(takeaway, cover)
+    takeaway_line = takeaway or "带走一句：下次别再被这个说法带偏。"
+    if not takeaway_line.startswith("带走一句"):
+        takeaway_line = f"带走一句：{takeaway_line}"
+    tags = []
+    for tag in required_tags or []:
+        label = str(tag).strip().lstrip("#")
+        if label and label not in tags:
+            tags.append(label)
+    if not tags:
+        tags = ["每日冷知识", "日常误判", "生活常识"]
+    tags_line = " ".join(f"#{item}" for item in tags)
+    body = (
+        f"{hook}\n\n"
+        f"{fact}\n\n"
+        f"{takeaway_line}"
+    )
+    return (
+        f"## cover_title\n{cover}\n"
+        f"## cover_hook\n{hook}\n"
+        f"## title\n{title or cover}\n"
+        f"## body\n{body}\n"
+        f"## tags\n{tags_line}\n"
+        f"## source_note\n来源：{source_name}\n"
+    )
+
+
 _FENCE_RE = re.compile(r"^```(?:markdown|md)?\s*\n(.*)\n```\s*$", re.DOTALL)
 _ISSUE_PREFIX_RE = re.compile(r"^第\s*\d+\s*期\s*[·•:：\-]\s*")
+_XHS_SECTION_NAMES = {
+    "cover_title",
+    "cover_hook",
+    "title",
+    "body",
+    "tags",
+    "source_note",
+}
+_XHS_SECTION_ALIASES = {
+    "封面大字": "cover_title",
+    "封面副行": "cover_hook",
+    "笔记标题": "title",
+    "正文": "body",
+    "标签": "tags",
+    "来源备注": "source_note",
+    "来源": "source_note",
+}
 
 
 def _strip_fence(text: str) -> str:
     stripped = (text or "").strip()
     match = _FENCE_RE.match(stripped)
-    return match.group(1).strip() if match else stripped
+    if match:
+        return match.group(1).strip()
+    # 偶发：整段外包了 ``` 但结尾不齐，尽量剥掉首尾围栏。
+    if stripped.startswith("```"):
+        stripped = re.sub(r"^```(?:markdown|md)?\s*", "", stripped)
+        stripped = re.sub(r"\n```\s*$", "", stripped)
+    return stripped.strip()
 
 
 def _first_line(text: str) -> str:
@@ -518,6 +622,65 @@ def _first_url(text: str) -> str:
     if not match:
         return ""
     return match.group(0).rstrip(".,，。")
+
+
+def _visible_len(text: str) -> int:
+    """封面字数：去掉空白和常见标点后再数。"""
+    return len(re.sub(r"[\s\W_]+", "", text or "", flags=re.UNICODE))
+
+
+def _clip_chars(text: str, max_chars: int) -> str:
+    chars = []
+    count = 0
+    for ch in text or "":
+        if re.match(r"[\s\W_]", ch, flags=re.UNICODE):
+            chars.append(ch)
+            continue
+        if count >= max_chars:
+            break
+        chars.append(ch)
+        count += 1
+    return "".join(chars).rstrip("，。！？、；： ")
+
+
+def _clip_cover_title(title: str, max_chars: int = 18) -> str:
+    cleaned = _ISSUE_PREFIX_RE.sub("", (title or "").strip())
+    cleaned = cleaned.strip(" ·•-—")
+    if _visible_len(cleaned) <= max_chars:
+        return cleaned or "日常误判"
+    return _clip_chars(cleaned, max_chars) or "日常误判"
+
+
+def _short_hook(takeaway: str, cover: str, max_chars: int = 28) -> str:
+    text = (takeaway or "").strip()
+    if text and _visible_len(text) <= max_chars:
+        return text
+    if text:
+        for sep in ("。", "！", "？", "；", "，"):
+            if sep not in text:
+                continue
+            part = text.split(sep, 1)[0].strip()
+            if 4 <= _visible_len(part) <= max_chars:
+                return part
+        clipped = _clip_chars(text, max_chars)
+        if clipped:
+            return clipped
+    cover = cover or "这个说法"
+    return f"关于「{cover}」，很多人想错了。"
+
+
+def _source_name_from_card(markdown: str) -> str:
+    for line in (markdown or "").splitlines():
+        stripped = line.strip()
+        if not (stripped.startswith("来源：") or stripped.startswith("来源:")):
+            continue
+        payload = stripped.split("：", 1)[-1] if "：" in stripped else stripped.split(":", 1)[-1]
+        link = re.search(r"\[([^\]]+)\]\([^)]+\)", payload)
+        if link:
+            return link.group(1).strip() or "公开来源"
+        plain = re.sub(r"https?://\S+", "", payload).strip(" []()")
+        return plain or "公开来源"
+    return "公开来源"
 
 
 def stamp_series_issue(markdown: str, issue: int) -> str:

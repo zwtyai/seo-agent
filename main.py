@@ -21,7 +21,12 @@ from core import (
     ProductConfig,
     QualityGateSystem,
 )
-from core.gates import _first_url, format_xhs_copy_paste, stamp_series_issue
+from core.gates import (
+    _first_url,
+    build_xhs_note_from_card,
+    format_xhs_copy_paste,
+    stamp_series_issue,
+)
 from publish_and_monitor import gsc_research_notes
 from static_publish import (
     least_used_content_type,
@@ -681,6 +686,17 @@ def run_series_finalize(config: ProductConfig, gate_system: QualityGateSystem) -
     return text
 
 
+def _xhs_voice_excerpt(voice: str) -> str:
+    """小红书任务只带语气里相关的一小段，避免整份 voice 冲掉输出格式。"""
+    text = (voice or "").strip()
+    if not text:
+        return "短、口语、有带走一句。封面大字不超过 18 字。正文不要外链。"
+    marker = "## 小红书版"
+    if marker in text:
+        return text.split(marker, 1)[1].strip()
+    return "\n".join(text.splitlines()[:20])
+
+
 def create_xhs_note_task(
     writer,
     config: ProductConfig,
@@ -698,28 +714,41 @@ def create_xhs_note_task(
 【站内卡片】
 {card}
 
-【栏目语气】
-{voice or "短、口语、有带走一句。"}
+【小红书口气】
+{_xhs_voice_excerpt(voice)}
 
-要求：
-1. 封面大字 ≤18 字，说清事实，不要夸张词。
-2. 封面副行一句，把人留住。
-3. 笔记标题可搜索，像正常人说话。
-4. 正文短段+空行：钩子 → 事实 → 带走一句。正文不要外链。
-5. 标签必须包含：{tags_line}；可再加 1-3 个相关词。
-6. 来源备注只写站点名，例如「来源：维基百科」，不要 URL。
+硬性要求：
+1. 必须按下面 6 个英文二级标题输出，标题名一字不差。
+2. 每个标题下面都要有内容，不要只输出空标题。
+3. cover_title 去空白标点后 4-18 字。
+4. body 短段+空行：钩子 → 事实 → 带走一句；正文不要 URL。
+5. tags 必须原样包含：{tags_line}；可再加 1-3 个相关词。
+6. source_note 只写「来源：站点名」，不要 URL。
 7. 不要写据说、网传、震惊、万亿倍。
 
-【输出格式】
+【输出示例——请按这个骨架填，不要改成自由散文】
 
 ## cover_title
+大脑不是只用了10%
 ## cover_hook
+别再信还有 90% 潜能待开发
 ## title
+人没用上全部大脑？这是个老谣言
 ## body
+那个「人只用了 10% 大脑」的说法，其实站不住。
+
+清醒或睡觉时，大脑几乎所有区域都在工作，没有大片地方闲着。
+
+带走一句：别再信特殊方法能激活大脑剩余部分。
 ## tags
+{tags_line} #大脑
 ## source_note
+来源：科普中国
 """
-    expected_output = "一份可复制到小红书的笔记文案：封面、标题、正文、标签、来源备注。"
+    expected_output = (
+        "只输出带 ## cover_title / ## cover_hook / ## title / ## body / "
+        "## tags / ## source_note 的 Markdown，不要散文，不要代码围栏。"
+    )
 
     def xhs_guardrail(output) -> tuple[bool, str]:
         text = getattr(output, "raw", None) or str(output)
@@ -733,7 +762,7 @@ def create_xhs_note_task(
         expected_output=expected_output,
         agent=writer,
         guardrail=xhs_guardrail,
-        guardrail_max_retries=1,
+        guardrail_max_retries=2,
     )
 
 
@@ -742,23 +771,49 @@ def run_series_xhs(
     factory: AgentFactory,
     gate_system: QualityGateSystem,
 ) -> str:
-    """系列：站内卡片 → 小红书文案（不发帖）。"""
+    """系列：站内卡片 → 小红书文案（不发帖）。模型格式失败时用卡片模板兜底。"""
     if not config.publishing_xiaohongshu_enabled:
         raise SystemExit(
             f"{config.name} 未开启 publishing.xiaohongshu.enabled，不必生成小红书文案。"
         )
     print(f"[{config.name}] 小红书：卡片 → 笔记文案（不发帖）")
     card = _load_step(config, "edit")
+    required_tags = config.publishing_xiaohongshu_tags or [config.name]
+    fallback = build_xhs_note_from_card(card, required_tags)
+    ok_fallback, fallback = gate_system.validate_xhs_note(
+        fallback,
+        required_tags=required_tags,
+    )
+    if not ok_fallback:
+        raise SystemExit(f"卡片模板兜底也未通过，请检查成稿：\n{fallback}")
+
     voice = factory.kb_loader.load().get("content", "")
     writer = factory.create_writer()
     task = create_xhs_note_task(writer, config, gate_system, card, voice)
-    text = _kickoff([writer], [task], {})
+    used_fallback = False
+    try:
+        text = _kickoff([writer], [task], {})
+        ok, revised = gate_system.validate_xhs_note(text, required_tags=required_tags)
+        if ok:
+            text = revised
+        else:
+            print("小红书模型输出未通过核对，改用卡片模板兜底。")
+            print(revised)
+            text = fallback
+            used_fallback = True
+    except Exception as exc:
+        print(f"小红书改写失败（{_redact_secrets(str(exc))}），改用卡片模板兜底。")
+        text = fallback
+        used_fallback = True
+
     path = _save_step(config, "xhs", text)
     _show_step("xhs", path, text)
     copy_path = config.get_run_dir() / "04-xhs.copy.txt"
     copy_path.write_text(format_xhs_copy_paste(text), encoding="utf-8")
     print(f"小红书文案已保存: {path}")
     print(f"可粘贴版: {copy_path}")
+    if used_fallback:
+        print("本次使用了模板兜底，流水线继续发布，不中断。")
     print(f"下一步：python main.py --product {config.id} --step publish")
     return text
 
