@@ -41,7 +41,7 @@ docs/series/coldfact/
 python main.py --product coldfact --step all
 ```
 
-定时：`.github/workflows/coldfact_series.yml`（UTC 00:00 ≈ 北京 08:00）。
+定时：`.github/workflows/coldfact_series.yml`（UTC 23:00 ≈ 北京 07:00）。
 
 只生成小红书文案（不发帖）：
 
