@@ -1,10 +1,10 @@
 name: Coldfact Daily Series
 
 # 冷知识独立定时，避免和译比邻共用一个 schedule 矩阵时不好排查。
-# UTC 00:00 ≈ 北京时间 08:00；一次跑满当天 3 条。
+# UTC 23:00 ≈ 北京时间次日 07:00；一次跑满当天 3 条。
 on:
   schedule:
-    - cron: '0 0 * * *'
+    - cron: '0 23 * * *'
   workflow_dispatch:
 
 permissions:
