@@ -243,7 +243,11 @@ class QualityGateSystem:
         if not source_url:
             problems.append("缺少 ## source_url。写一个 http 开头的原文页，找不到就不要交这条。")
         else:
-            problems.extend(self._series_source_problems(source_url))
+            canonical, source_problems = self._canonicalize_series_source(source_url)
+            problems.extend(source_problems)
+            if canonical and canonical != source_url:
+                text = text.replace(source_url, canonical)
+                source_url = canonical
 
         folded_title = self._strip_issue_prefix(self._normalize_text(title))
         if folded_title and existing_titles:
@@ -283,11 +287,18 @@ class QualityGateSystem:
         else:
             problems.extend(self._series_title_problems(title))
 
-        url = source_url or _first_url(text)
-        if not url or url not in text:
+        url = (source_url or "").strip() or _first_url(text)
+        if not url:
             problems.append("正文要保留简报里的来源 URL，写成「来源：[站点名](URL)」。")
-        elif url:
-            problems.extend(self._series_source_problems(url))
+        else:
+            canonical, source_problems = self._canonicalize_series_source(url)
+            problems.extend(source_problems)
+            if canonical and url in text and canonical != url:
+                text = text.replace(url, canonical)
+            # 卡片里必须能看到简报 URL，或解开后的真实 URL。
+            visible = canonical or url
+            if visible not in text and url not in text:
+                problems.append("正文要保留简报里的来源 URL，写成「来源：[站点名](URL)」。")
 
         takeaway = self._series_takeaway_from_card(text)
         if not takeaway:
@@ -353,20 +364,17 @@ class QualityGateSystem:
             ]
         return []
 
-    def _series_source_problems(self, url: str) -> list[str]:
-        from core.urlcheck import host_blocked, probe_source_url
+    def _canonicalize_series_source(self, url: str) -> tuple[str | None, list[str]]:
+        """解开 grounding 跳转；按配置决定是否强制 HTTP 200。"""
+        from core.urlcheck import canonicalize_source_url
 
-        text = (url or "").strip()
-        if "vertexaisearch.cloud.google.com/grounding-api-redirect" in text:
-            return ["来源不要用 grounding 跳转链。换成百科、论文或媒体的原文 URL。"]
-        blocked = host_blocked(text)
-        if blocked:
-            return [f"来源不要用 {blocked} 这类跳转/验证码页，换成可直接打开的原文。"]
-        if getattr(self.config, "series_require_live_source", True):
-            ok, reason = probe_source_url(text)
-            if not ok:
-                return [reason]
-        return []
+        canonical, err = canonicalize_source_url(
+            url,
+            require_live=bool(getattr(self.config, "series_require_live_source", False)),
+        )
+        if err:
+            return None, [err]
+        return canonical, []
 
     @staticmethod
     def _series_takeaway_from_card(markdown: str) -> str:
