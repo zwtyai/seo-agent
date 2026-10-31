@@ -354,8 +354,18 @@ class QualityGateSystem:
         return []
 
     def _series_source_problems(self, url: str) -> list[str]:
-        if "vertexaisearch.cloud.google.com/grounding-api-redirect" in (url or ""):
+        from core.urlcheck import host_blocked, probe_source_url
+
+        text = (url or "").strip()
+        if "vertexaisearch.cloud.google.com/grounding-api-redirect" in text:
             return ["来源不要用 grounding 跳转链。换成百科、论文或媒体的原文 URL。"]
+        blocked = host_blocked(text)
+        if blocked:
+            return [f"来源不要用 {blocked} 这类跳转/验证码页，换成可直接打开的原文。"]
+        if getattr(self.config, "series_require_live_source", True):
+            ok, reason = probe_source_url(text)
+            if not ok:
+                return [reason]
         return []
 
     @staticmethod
@@ -546,7 +556,15 @@ def build_xhs_note_from_card(
             continue
         if stripped.startswith("为什么值得说：") or stripped.startswith("为什么值得说:"):
             continue
-        fact_lines.append(stripped)
+        # 正文不能带外链；跳过纯 URL / 纯 Markdown 链接行。
+        if re.match(r"^https?://\S+$", stripped):
+            continue
+        if re.fullmatch(r"\[[^\]]+\]\(https?://[^)]+\)", stripped):
+            continue
+        cleaned = re.sub(r"https?://\S+", "", stripped)
+        cleaned = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", cleaned).strip()
+        if cleaned:
+            fact_lines.append(cleaned)
     fact = "\n".join(fact_lines).strip() or (title or "一条日常误判")
     cover = _clip_cover_title(title or "日常误判")
     hook = _short_hook(takeaway, cover)

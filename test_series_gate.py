@@ -22,6 +22,8 @@ def _config() -> ProductConfig:
         word_count_max=520,
         knowledge_base_source="knowledge_base/coldfact/",
         knowledge_base_main_file="voice.md",
+        # 单元测试不打真网；存活检查见 test_urlcheck / 下方 mock 用例。
+        series_require_live_source=False,
     )
 
 
@@ -50,6 +52,9 @@ class SeriesGateTest(unittest.TestCase):
         self.assertEqual(coldfact.mode, "series")
         self.assertEqual(yibelin.mode, "seo")
         self.assertEqual(coldfact.publishing_output_dir, "docs/series/coldfact/")
+        self.assertEqual(coldfact.series_batch_size, 3)
+        self.assertEqual(coldfact.series_timezone, "Asia/Shanghai")
+        self.assertTrue(coldfact.series_require_live_source)
         self.assertIn("日常生活里的小误判", coldfact.description)
         voice = KnowledgeBaseLoader(coldfact).load()
         self.assertEqual(voice["type"], "series_voice")
@@ -233,6 +238,56 @@ class SeriesGateTest(unittest.TestCase):
         self.assertIn("#每日冷知识", revised)
         self.assertIn("来源：科普中国-科学辟谣", revised)
         self.assertNotIn("https://", QualityGateSystem._parse_sections(revised)["body"])
+
+    def test_xhs_fallback_strips_bare_url_lines(self):
+        coldfact = ProductConfig.load("coldfact")
+        card = """# 第 006 期 · 生鸡肉下锅前别再用水冲洗了
+
+冲洗生鸡肉会把细菌溅到水槽。
+
+https://www.cdc.gov/foodsafety/chicken.html
+
+带走一句：下次解冻后直接下锅，别先冲一遍。
+
+来源：[CDC](https://www.cdc.gov/foodsafety/chicken.html)
+"""
+        built = build_xhs_note_from_card(card, coldfact.publishing_xiaohongshu_tags)
+        ok, revised = self.gate.validate_xhs_note(
+            built,
+            required_tags=coldfact.publishing_xiaohongshu_tags,
+        )
+        self.assertTrue(ok, revised)
+        body = QualityGateSystem._parse_sections(revised)["body"]
+        self.assertNotIn("https://", body)
+        self.assertIn("冲洗生鸡肉", body)
+
+    def test_brief_rejects_dead_source_when_live_required(self):
+        from unittest.mock import patch
+
+        gate = QualityGateSystem(
+            ProductConfig(
+                id="coldfact",
+                name="每日冷知识",
+                domain="https://example.com/",
+                mode="series",
+                word_count_min=80,
+                word_count_max=520,
+                series_require_live_source=True,
+            )
+        )
+        brief = (
+            "## title\n香蕉算浆果\n## fact\n香蕉由子房发育而来，植物学上算浆果。\n"
+            "## why\n下次别把超市分类当成植物学结论。\n"
+            "## source_name\n百科\n"
+            "## source_url\nhttps://www.britannica.com/plant/banana\n"
+        )
+        with patch(
+            "core.urlcheck.probe_source_url",
+            return_value=(False, "来源打不开：HTTP 404（最终 https://example.invalid）。"),
+        ):
+            ok, message = gate.validate_series_brief(brief)
+        self.assertFalse(ok)
+        self.assertIn("404", message)
 
 
 if __name__ == "__main__":

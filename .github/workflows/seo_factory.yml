@@ -2,10 +2,9 @@ name: SEO Automation Factory
 
 on:
   schedule:
-    # UTC 周日/二/四 18:00 ≈ 北京时间周一/三/五 02:00。这条只跑译比邻。
+    # UTC 周日/二/四 18:00 ≈ 北京时间周一/三/五 02:00。只跑译比邻。
+    # 每日冷知识见 coldfact_series.yml，避免两个 cron 抢同一 workflow 难排查。
     - cron: '0 18 * * 0,2,4'
-    # UTC 每天 00:00 ≈ 北京时间 08:00。这条只跑每日冷知识。
-    - cron: '0 0 * * *'
   workflow_dispatch:
     inputs:
       product:
@@ -70,10 +69,7 @@ jobs:
         export GOOGLE_GENAI_USE_VERTEXAI=true
         PRODUCT="${{ github.event.inputs.product }}"
         if [ -z "$PRODUCT" ]; then
-          case "${{ github.event.schedule }}" in
-            "0 0 * * *") PRODUCT="coldfact" ;;
-            *) PRODUCT="yibelin" ;;
-          esac
+          PRODUCT="yibelin"
         fi
         echo "PRODUCT=$PRODUCT" >> "$GITHUB_ENV"
         python main.py --product "$PRODUCT" --step all
