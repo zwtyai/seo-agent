@@ -1,4 +1,4 @@
-"""来源 URL 存活检查。不打真网，全部 mock。"""
+"""来源 URL 存活检查与 grounding 解链。不打真网，全部 mock。"""
 
 from __future__ import annotations
 
@@ -6,7 +6,12 @@ import unittest
 from unittest.mock import MagicMock, patch
 from urllib.error import HTTPError
 
-from core.urlcheck import host_blocked, probe_source_url
+from core.urlcheck import (
+    canonicalize_source_url,
+    host_blocked,
+    probe_source_url,
+    resolve_grounding_redirect,
+)
 
 
 class UrlCheckTest(unittest.TestCase):
@@ -18,6 +23,37 @@ class UrlCheckTest(unittest.TestCase):
         )
         self.assertTrue(host_blocked("https://baijiahao.baidu.com/s?id=1"))
         self.assertIsNone(host_blocked("https://www.britannica.com/plant/banana"))
+
+    def test_resolve_grounding_reads_location(self):
+        grounding = (
+            "https://vertexaisearch.cloud.google.com/grounding-api-redirect/abc"
+        )
+        real = "https://www.britannica.com/plant/banana"
+        response = MagicMock()
+        response.headers = {"Location": real}
+        response.geturl.return_value = grounding
+        response.__enter__.return_value = response
+        response.__exit__.return_value = False
+
+        opener = MagicMock()
+        opener.open.return_value = response
+        with patch("core.urlcheck.build_opener", return_value=opener):
+            got, note = resolve_grounding_redirect(grounding)
+        self.assertEqual(got, real)
+        self.assertIn("解开", note)
+
+    def test_canonicalize_unwraps_without_live_check(self):
+        grounding = (
+            "https://vertexaisearch.cloud.google.com/grounding-api-redirect/abc"
+        )
+        real = "https://www.britannica.com/plant/banana"
+        with patch(
+            "core.urlcheck.resolve_grounding_redirect",
+            return_value=(real, "ok"),
+        ):
+            got, err = canonicalize_source_url(grounding, require_live=False)
+        self.assertEqual(got, real)
+        self.assertEqual(err, "")
 
     def test_probe_requires_http_200(self):
         response = MagicMock()

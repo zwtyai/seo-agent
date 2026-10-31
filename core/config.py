@@ -29,7 +29,7 @@ class ProductConfig:
     # series 专用：每天批量条数、按哪时区切「天」、来源是否必须 HTTP 200。
     series_batch_size: int = 1
     series_timezone: str = "Asia/Shanghai"
-    series_require_live_source: bool = True
+    series_require_live_source: bool = False
     
     # 关键词策略
     seed_keywords: list[str] = field(default_factory=list)
@@ -153,7 +153,7 @@ class ProductConfig:
         product_mention = content_strategy.get("product_mention", {})
         require_live = series.get("require_live_source")
         if require_live is None:
-            require_live = True
+            require_live = False
         
         return cls(
             # 基础信息

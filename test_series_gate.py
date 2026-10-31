@@ -54,7 +54,7 @@ class SeriesGateTest(unittest.TestCase):
         self.assertEqual(coldfact.publishing_output_dir, "docs/series/coldfact/")
         self.assertEqual(coldfact.series_batch_size, 3)
         self.assertEqual(coldfact.series_timezone, "Asia/Shanghai")
-        self.assertTrue(coldfact.series_require_live_source)
+        self.assertFalse(coldfact.series_require_live_source)
         self.assertIn("日常生活里的小误判", coldfact.description)
         voice = KnowledgeBaseLoader(coldfact).load()
         self.assertEqual(voice["type"], "series_voice")
@@ -83,16 +83,47 @@ class SeriesGateTest(unittest.TestCase):
         self.assertIn("夸张词", message)
         self.assertIn("带走一句", message)
 
-    def test_brief_rejects_grounding_redirect(self):
-        ok, message = self.gate.validate_series_brief(
-            "## title\n香蕉算浆果\n"
-            "## fact\n香蕉由子房发育而来，植物学上算浆果。\n"
-            "## why\n下次别把超市分类当成植物学结论。\n"
-            "## source_name\n搜索结果\n"
-            "## source_url\nhttps://vertexaisearch.cloud.google.com/grounding-api-redirect/abc\n"
+    def test_brief_rejects_unresolvable_grounding_redirect(self):
+        from unittest.mock import patch
+
+        grounding = (
+            "https://vertexaisearch.cloud.google.com/grounding-api-redirect/abc"
         )
+        with patch(
+            "core.urlcheck.resolve_grounding_redirect",
+            return_value=(None, "grounding 跳转解不开：HTTP 403。请改填原文 URL。"),
+        ):
+            ok, message = self.gate.validate_series_brief(
+                "## title\n香蕉算浆果\n"
+                "## fact\n香蕉由子房发育而来，植物学上算浆果。\n"
+                "## why\n下次别把超市分类当成植物学结论。\n"
+                "## source_name\n搜索结果\n"
+                f"## source_url\n{grounding}\n"
+            )
         self.assertFalse(ok)
         self.assertIn("跳转", message)
+
+    def test_brief_rewrites_resolved_grounding_url(self):
+        from unittest.mock import patch
+
+        grounding = (
+            "https://vertexaisearch.cloud.google.com/grounding-api-redirect/abc"
+        )
+        real = "https://www.britannica.com/plant/banana"
+        with patch(
+            "core.urlcheck.resolve_grounding_redirect",
+            return_value=(real, f"已解开 grounding 跳转 → {real}"),
+        ):
+            ok, text = self.gate.validate_series_brief(
+                "## title\n香蕉算浆果\n"
+                "## fact\n香蕉由子房发育而来，植物学上算浆果。\n"
+                "## why\n下次别把超市分类当成植物学结论。\n"
+                "## source_name\n百科\n"
+                f"## source_url\n{grounding}\n"
+            )
+        self.assertTrue(ok, text)
+        self.assertIn(real, text)
+        self.assertNotIn("vertexaisearch", text)
 
     def test_brief_rejects_a_fact_already_published(self):
         fact = "香蕉由子房发育而来，植物学上算浆果。"
