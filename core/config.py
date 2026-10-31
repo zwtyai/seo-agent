@@ -26,6 +26,10 @@ class ProductConfig:
     description: str = ""
     # seo：挖词写长文。series：固定栏目，一条来源一张卡片。
     mode: str = "seo"
+    # series 专用：每天批量条数、按哪时区切「天」、来源是否必须 HTTP 200。
+    series_batch_size: int = 1
+    series_timezone: str = "Asia/Shanghai"
+    series_require_live_source: bool = True
     
     # 关键词策略
     seed_keywords: list[str] = field(default_factory=list)
@@ -122,6 +126,7 @@ class ProductConfig:
     def _from_dict(cls, product_id: str, data: dict) -> ProductConfig:
         """从字典创建ProductConfig"""
         product = data.get("product", {})
+        series = data.get("series", {})
         keyword_strategy = data.get("keyword_strategy", {})
         content_strategy = data.get("content_strategy", {})
         knowledge_base = data.get("knowledge_base", {})
@@ -146,6 +151,9 @@ class ProductConfig:
         word_count = content_strategy.get("word_count", {})
         evidence_req = content_strategy.get("evidence_requirements", {})
         product_mention = content_strategy.get("product_mention", {})
+        require_live = series.get("require_live_source")
+        if require_live is None:
+            require_live = True
         
         return cls(
             # 基础信息
@@ -154,6 +162,10 @@ class ProductConfig:
             domain=product.get("domain", ""),
             description=product.get("description", ""),
             mode=str(product.get("mode") or "seo").strip().lower(),
+            series_batch_size=max(1, int(series.get("batch_size") or 1)),
+            series_timezone=str(series.get("timezone") or "Asia/Shanghai").strip()
+            or "Asia/Shanghai",
+            series_require_live_source=bool(require_live),
             
             # 关键词策略
             seed_keywords=keyword_strategy.get("seed_keywords", []),

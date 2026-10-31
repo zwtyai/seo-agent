@@ -9,8 +9,9 @@ import re
 from datetime import datetime, timezone
 from html import escape
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Iterator, Optional
 from urllib.parse import quote
+from zoneinfo import ZoneInfo
 
 _REPO_ROOT = Path(__file__).resolve().parent
 # GitHub Pages「从分支部署」只支持 / 或 /docs，故静态站落在 docs/
@@ -20,6 +21,51 @@ SITE_ORIGIN = "https://zwtyai.github.io/seo-agent"
 _TITLE_TAG_RE = re.compile(r"<title>(.*?)</title>", re.IGNORECASE | re.DOTALL)
 _H1_TAG_RE = re.compile(r"<h1[^>]*>(.*?)</h1>", re.IGNORECASE | re.DOTALL)
 _TAG_RE = re.compile(r"<[^>]+>")
+_DAY_DIR_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+
+def series_day_key(tz_name: str = "Asia/Shanghai") -> str:
+    """按栏目时区得到当天目录名，例如 2026-10-31。"""
+    try:
+        tz = ZoneInfo(tz_name)
+    except Exception:  # noqa: BLE001 - 非法时区名退回上海
+        tz = ZoneInfo("Asia/Shanghai")
+    return datetime.now(tz).date().isoformat()
+
+
+def _iter_day_dirs(site_dir: Path) -> list[Path]:
+    if not site_dir.is_dir():
+        return []
+    return sorted(
+        (
+            child
+            for child in site_dir.iterdir()
+            if child.is_dir() and _DAY_DIR_RE.match(child.name)
+        ),
+        reverse=True,
+    )
+
+
+def iter_published_files(
+    site_dir: Path,
+    *,
+    suffix: str,
+) -> Iterator[Path]:
+    """
+    已发布文件：优先按天目录 YYYY-MM-DD/，再兼容旧 posts/。
+    新到旧：日期新的在前；同日内按文件名升序（01、02、03）。
+    """
+    for day_dir in _iter_day_dirs(site_dir):
+        for path in sorted(day_dir.glob(f"*{suffix}")):
+            if path.name.startswith("_"):
+                continue
+            yield path
+    posts_dir = site_dir / "posts"
+    if posts_dir.is_dir():
+        for path in sorted(posts_dir.glob(f"*{suffix}"), reverse=True):
+            if path.name.startswith("_"):
+                continue
+            yield path
 
 
 def _result_to_markdown(result: Any) -> str:
@@ -137,15 +183,10 @@ def _normalize_title_key(title: str) -> str:
 
 
 def list_published_titles(site_dir: Optional[Path] = None) -> list[str]:
-    """读取已发布文章的内容标题（优先 HTML <title>/H1）。"""
+    """读取已发布文章的内容标题（优先 HTML <title>/H1）。含按天目录与旧 posts/。"""
     site_dir = Path(site_dir) if site_dir else _DEFAULT_SITE_DIR
-    posts_dir = site_dir / "posts"
-    if not posts_dir.is_dir():
-        return []
     titles: list[str] = []
-    for p in sorted(posts_dir.glob("*.html"), reverse=True):
-        if p.name.startswith("_"):
-            continue
+    for p in iter_published_files(site_dir, suffix=".html"):
         try:
             html = p.read_text(encoding="utf-8")
         except OSError:
@@ -158,12 +199,9 @@ def list_published_titles(site_dir: Optional[Path] = None) -> list[str]:
 def list_published_content_types(site_dir: Optional[Path] = None) -> list[str]:
     """读取已发布文章的内容类型（从 Markdown 推断）。"""
     site_dir = Path(site_dir) if site_dir else _DEFAULT_SITE_DIR
-    posts_dir = site_dir / "posts"
-    if not posts_dir.is_dir():
-        return []
     types: list[str] = []
-    for p in sorted(posts_dir.glob("*.md"), reverse=True):
-        if p.name.startswith("_"):
+    for p in iter_published_files(site_dir, suffix=".md"):
+        if p.name.endswith(".xhs.md"):
             continue
         try:
             markdown = p.read_text(encoding="utf-8")
@@ -175,14 +213,11 @@ def list_published_content_types(site_dir: Optional[Path] = None) -> list[str]:
 
 
 def list_published_markdown(site_dir: Optional[Path] = None) -> list[str]:
-    """读取已发布文章的 Markdown，供种子词轮换统计。"""
+    """读取已发布文章的 Markdown，供种子词轮换统计与系列去重。"""
     site_dir = Path(site_dir) if site_dir else _DEFAULT_SITE_DIR
-    posts_dir = site_dir / "posts"
-    if not posts_dir.is_dir():
-        return []
     texts: list[str] = []
-    for path in sorted(posts_dir.glob("*.md")):
-        if path.name.startswith("_"):
+    for path in iter_published_files(site_dir, suffix=".md"):
+        if path.name.endswith(".xhs.md"):
             continue
         try:
             texts.append(path.read_text(encoding="utf-8"))
@@ -258,14 +293,24 @@ def _meta_description(markdown: str, fallback: str = "译比邻 PDF 在线翻译
     return _clip(text, 160) or fallback
 
 
-def _post_url(filename: str, origin: str = SITE_ORIGIN) -> str:
-    return f"{origin.rstrip('/')}/posts/{quote(filename)}"
+def _post_url(
+    filename: str,
+    origin: str = SITE_ORIGIN,
+    *,
+    day: str | None = None,
+) -> str:
+    base = origin.rstrip("/")
+    if day:
+        return f"{base}/{day}/{quote(filename)}"
+    return f"{base}/posts/{quote(filename)}"
 
 
 def _lastmod_from_name(filename: str, path: Path) -> str:
     match = re.match(r"(\d{8})-", filename)
     if match:
         return datetime.strptime(match.group(1), "%Y%m%d").date().isoformat()
+    if path.parent and _DAY_DIR_RE.match(path.parent.name):
+        return path.parent.name
     return datetime.fromtimestamp(path.stat().st_mtime, timezone.utc).date().isoformat()
 
 
@@ -348,24 +393,21 @@ def _page_shell(
 
 def _write_crawl_files(site_dir: Path, brand: SiteBrand | None = None) -> None:
     brand = brand or SiteBrand()
-    posts_dir = site_dir / "posts"
     urls = [
         "  <url>\n"
         f"    <loc>{escape(brand.origin + '/')}</loc>\n"
         "  </url>"
     ]
-    if posts_dir.is_dir():
-        for path in sorted(posts_dir.glob("*.html")):
-            if path.name.startswith("_"):
-                continue
-            lastmod = _lastmod_from_name(path.name, path)
-            loc = escape(_post_url(path.name, brand.origin))
-            urls.append(
-                "  <url>\n"
-                f"    <loc>{loc}</loc>\n"
-                f"    <lastmod>{lastmod}</lastmod>\n"
-                "  </url>"
-            )
+    for path in iter_published_files(site_dir, suffix=".html"):
+        day = path.parent.name if _DAY_DIR_RE.match(path.parent.name) else None
+        lastmod = _lastmod_from_name(path.name, path)
+        loc = escape(_post_url(path.name, brand.origin, day=day))
+        urls.append(
+            "  <url>\n"
+            f"    <loc>{loc}</loc>\n"
+            f"    <lastmod>{lastmod}</lastmod>\n"
+            "  </url>"
+        )
     sitemap = (
         '<?xml version="1.0" encoding="UTF-8"?>\n'
         '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
@@ -381,22 +423,57 @@ def _write_crawl_files(site_dir: Path, brand: SiteBrand | None = None) -> None:
     )
 
 
+def _index_listing_html(site_dir: Path) -> str:
+    """首页列表：按天分组；旧 posts/ 放在「往期」下。"""
+    chunks: list[str] = []
+    for day_dir in _iter_day_dirs(site_dir):
+        day_items: list[str] = []
+        for p in sorted(day_dir.glob("*.html")):
+            if p.name.startswith("_"):
+                continue
+            try:
+                html = p.read_text(encoding="utf-8")
+            except OSError:
+                html = ""
+            label = _title_from_html(html) or p.stem
+            day_items.append(
+                f'        <li><a href="{escape(day_dir.name)}/{escape(p.name)}">'
+                f"{escape(label)}</a></li>"
+            )
+        if day_items:
+            chunks.append(f"      <h2>{escape(day_dir.name)}</h2>")
+            chunks.append('      <ul class="post-list">')
+            chunks.extend(day_items)
+            chunks.append("      </ul>")
+
+    posts_dir = site_dir / "posts"
+    legacy: list[str] = []
+    if posts_dir.is_dir():
+        for p in sorted(posts_dir.glob("*.html"), reverse=True):
+            if p.name.startswith("_"):
+                continue
+            try:
+                html = p.read_text(encoding="utf-8")
+            except OSError:
+                html = ""
+            label = _title_from_html(html) or p.stem
+            legacy.append(
+                f'        <li><a href="posts/{escape(p.name)}">{escape(label)}</a></li>'
+            )
+    if legacy:
+        chunks.append("      <h2>往期</h2>")
+        chunks.append('      <ul class="post-list">')
+        chunks.extend(legacy)
+        chunks.append("      </ul>")
+
+    if not chunks:
+        return '      <ul class="post-list">\n      <li>（暂无文章）</li>\n      </ul>'
+    return "\n".join(chunks)
+
+
 def _rebuild_index(site_dir: Path, brand: SiteBrand | None = None) -> Path:
     brand = brand or SiteBrand()
-    posts_dir = site_dir / "posts"
-    posts = sorted(posts_dir.glob("*.html"), reverse=True)
-    items = []
-    for p in posts:
-        if p.name.startswith("_"):
-            continue
-        try:
-            html = p.read_text(encoding="utf-8")
-        except OSError:
-            html = ""
-        label = _title_from_html(html) or p.stem
-        items.append(f'      <li><a href="posts/{escape(p.name)}">{escape(label)}</a></li>')
-
-    listing = "\n".join(items) if items else "      <li>（暂无文章）</li>"
+    listing = _index_listing_html(site_dir)
     index_url = escape(brand.origin + "/")
     index_title = escape(f"{brand.name} 文章")
     index_description = escape(f"{brand.blurb}相关文章列表")
@@ -419,9 +496,7 @@ def _rebuild_index(site_dir: Path, brand: SiteBrand | None = None) -> Path:
   </header>
   <main class="index">
     <h1>文章列表</h1>
-    <ul class="post-list">
 {listing}
-    </ul>
   </main>
   <footer class="site-footer">
     <p>Generated by seo-agent</p>
@@ -449,10 +524,14 @@ def publish_static_page(
     brand_name: str | None = None,
     brand_url: str | None = None,
     brand_blurb: str | None = None,
+    day: str | None = None,
+    slot: int | None = None,
 ) -> Path:
     """
-    将一次流水线结果写成 docs/posts/<timestamp>-<title-slug>.html，并刷新 index.html。
-    列表标题取自文章 H1/内容标题（非日期文件名）；同题自动去重改写。
+    将一次流水线结果写成静态 HTML，并刷新 index.html。
+
+    - 默认（SEO）：site_dir/posts/<timestamp>-<slug>.html
+    - 系列按天：site_dir/YYYY-MM-DD/01-<slug>.html（day + slot）
     """
     site_dir = Path(site_dir) if site_dir else _DEFAULT_SITE_DIR
     brand = SiteBrand(
@@ -461,7 +540,12 @@ def publish_static_page(
         url=brand_url or "https://yibelin.com",
         blurb=brand_blurb or "译比邻 PDF 在线翻译",
     )
-    posts_dir = site_dir / "posts"
+    if day:
+        if not _DAY_DIR_RE.match(day):
+            raise ValueError(f"day 必须是 YYYY-MM-DD，收到：{day!r}")
+        posts_dir = site_dir / day
+    else:
+        posts_dir = site_dir / "posts"
     assets_dir = site_dir / "assets"
     posts_dir.mkdir(parents=True, exist_ok=True)
     assets_dir.mkdir(parents=True, exist_ok=True)
@@ -482,14 +566,22 @@ def publish_static_page(
     now = datetime.now(timezone.utc).replace(microsecond=0)
     stamp = now.strftime("%Y%m%d-%H%M%S")
     slug = _slugify(title) or _slugify(seed_keyword)
-    filename = f"{stamp}-{slug}.html"
+    if day and slot is not None:
+        filename = f"{int(slot):02d}-{slug}.html"
+        stem = f"{int(slot):02d}-{slug}"
+    elif day:
+        filename = f"{stamp}-{slug}.html"
+        stem = f"{stamp}-{slug}"
+    else:
+        filename = f"{stamp}-{slug}.html"
+        stem = f"{stamp}-{slug}"
     out_path = posts_dir / filename
     out_path.write_text(
         _page_shell(
             title,
             body,
             description=_meta_description(markdown, brand.blurb),
-            canonical=_post_url(filename, brand.origin),
+            canonical=_post_url(filename, brand.origin, day=day),
             published=now.isoformat(),
             brand=brand,
         ),
@@ -497,7 +589,7 @@ def publish_static_page(
     )
 
     # 同步保存原始 Markdown，方便 diff / 再加工
-    md_path = posts_dir / f"{stamp}-{slug}.md"
+    md_path = posts_dir / f"{stem}.md"
     md_path.write_text(markdown + "\n", encoding="utf-8")
 
     _rebuild_index(site_dir, brand)

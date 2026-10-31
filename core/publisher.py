@@ -75,6 +75,8 @@ class MultiPublisher:
         
         output_dir = self.config.get_output_dir()
         seed_keyword = metadata.get("seed_keyword", self.config.get_primary_seed_keyword())
+        day = metadata.get("day") or None
+        slot = metadata.get("slot")
         html_path = publish_static_page(
             markdown,
             seed_keyword=seed_keyword,
@@ -83,6 +85,8 @@ class MultiPublisher:
             brand_name=self.config.name,
             brand_url=self.config.domain or self.config.seo_internal_links_target_url,
             brand_blurb=self.config.description or self.config.name,
+            day=day,
+            slot=int(slot) if slot is not None else None,
         )
         
         return html_path

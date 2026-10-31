@@ -33,6 +33,7 @@ from static_publish import (
     list_published_content_types,
     list_published_markdown,
     list_published_titles,
+    series_day_key,
 )
 from vertex_llm import (
     build_gemini_llm,
@@ -511,11 +512,11 @@ def create_series_find_task(
 
 规则：
 1. 用 Google Search Grounding 找一条具体事实。要能改读者明天用得上的小判断（做饭、洗衣、睡觉、用小物等），不要只求猎奇。
-2. 来源必须是这次搜索打开过的原文页。百科、博物馆、论文摘要、正规媒体、权威机构都可以。不要交 grounding 跳转短链。
+2. 来源必须是这次搜索打开过的原文页，且系统会实测最终 HTTP 200。百科、博物馆、论文摘要、正规媒体、权威机构都可以。不要交 grounding 跳转短链、百度百家号或验证码页。
 3. 用自己的话写事实，不要整段抄原文。
 4. ## why 写「带走一句」：下次怎么做、别再信什么。不要写「颠覆固有印象」。
 5. 标题不要夸张：震惊、万亿倍、竟然、绝了、你绝对不知道。
-6. 找不到可打开的原文页，就不要换一个编出来的 URL。## source_url 下面写「未找到」。
+6. 打不开、404、跳回首页的链接一律不要。找不到可打开的原文页，## source_url 下面写「未找到」，不要编 URL。
 7. 不要写搜索量、关键词难度、竞品、产品。
 8. 不要碰：治病疗效、投资建议、法律结论、心理疗愈鸡汤、思想实验空谈、灵异与政治争议。
 
@@ -824,13 +825,22 @@ def run_series_all(
     gate_system: QualityGateSystem,
     publisher: MultiPublisher,
 ) -> dict:
-    """系列完整流程：找一条 → 卡片 → 小红书文案 → 发布。"""
-    print(f"[{config.name}] 完整流程：找一条 → 卡片 → 小红书文案 → 发布\n")
-    run_series_find(config, factory, gate_system)
-    run_series_write(config, factory, gate_system)
-    if config.publishing_xiaohongshu_enabled:
-        run_series_xhs(config, factory, gate_system)
-    return run_publish(config, publisher)
+    """系列完整流程：按天批量找条 → 卡片 → 小红书文案 → 发布到 YYYY-MM-DD/。"""
+    batch = max(1, int(getattr(config, "series_batch_size", 1) or 1))
+    day = series_day_key(getattr(config, "series_timezone", "Asia/Shanghai"))
+    print(
+        f"[{config.name}] 完整流程：{day} 共 {batch} 条 → "
+        f"找一条 → 卡片 → 小红书文案 → 发布\n"
+    )
+    items: list[dict] = []
+    for slot in range(1, batch + 1):
+        print(f"======== {day} · 第 {slot}/{batch} 条 ========")
+        run_series_find(config, factory, gate_system)
+        run_series_write(config, factory, gate_system)
+        if config.publishing_xiaohongshu_enabled:
+            run_series_xhs(config, factory, gate_system)
+        items.append(run_publish(config, publisher, day=day, slot=slot))
+    return {"day": day, "batch_size": batch, "items": items}
 
 
 def run_keyword(config: ProductConfig, factory: AgentFactory, gate_system: QualityGateSystem) -> str:
@@ -911,12 +921,24 @@ def run_edit(config: ProductConfig, factory: AgentFactory, gate_system: QualityG
     return text
 
 
-def run_publish(config: ProductConfig, publisher: MultiPublisher) -> dict:
-    """只发布"""
+def run_publish(
+    config: ProductConfig,
+    publisher: MultiPublisher,
+    *,
+    day: str | None = None,
+    slot: int | None = None,
+) -> dict:
+    """只发布。系列可指定 day/slot，落到 YYYY-MM-DD/01-*.html。"""
     print(f"📤 [{config.name}] 发布：终稿 → 静态HTML")
-    
+    if day:
+        print(f"📅 目录：{day}/" + (f"{int(slot):02d}-*" if slot is not None else ""))
+
     final = _load_step(config, "edit")
-    metadata = {"seed_keyword": config.get_primary_seed_keyword()}
+    metadata: dict = {"seed_keyword": config.get_primary_seed_keyword()}
+    if day:
+        metadata["day"] = day
+    if slot is not None:
+        metadata["slot"] = int(slot)
     if config.publishing_xiaohongshu_enabled:
         xhs_path = _step_path(config, "xhs")
         if xhs_path.is_file():
@@ -925,13 +947,13 @@ def run_publish(config: ProductConfig, publisher: MultiPublisher) -> dict:
             print("未找到小红书文案，跳过 .xhs 落盘。可先跑 --step xhs。")
 
     results = publisher.publish(final, metadata=metadata)
-    
+
     for channel, result in results.items():
         if "error" in channel:
             print(f"❌ {channel}: {result}")
         else:
             print(f"✅ {channel}: {result}")
-    
+
     return results
 
 
