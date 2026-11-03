@@ -88,6 +88,42 @@ class SeriesGateTest(unittest.TestCase):
         self.assertIn("夸张词", message)
         self.assertIn("带走一句", message)
 
+    def test_brief_accepts_actually_contrast_and_glued_heading(self):
+        """线上失败：但实际上未算落差；重试时 This looks good.## title 解析丢标题。"""
+        glass = """## title
+老教堂玻璃窗底厚顶薄，不是玻璃流淌了几百年
+
+## fact
+很多人认为，老建筑的玻璃窗底部比顶部厚，是因为玻璃本质上是一种流动缓慢的液体。但实际上，玻璃是无定形固体，厚度不均来自古代工艺。
+
+## why
+下次别再相信玻璃是流动的液体。
+
+## source_name
+The American Ceramic Society
+## source_url
+https://www.ceramics.org/ceramic-tech-today/glass-ceramics/glass-flow-in-medieval-windows-myth-busted
+"""
+        ok, text = self.gate.validate_series_brief(glass)
+        self.assertTrue(ok, text)
+        self.assertIn("## title", text)
+
+        glued = (
+            "This looks good.## title\n"
+            "金属摸起来更冷，不是因为它本身温度低\n\n"
+            "## fact\n"
+            "很多人以为金属比木头温度低，但实际上同一房间里两者温度相同，只是导热更快。\n\n"
+            "## why\n"
+            "下次别再以为金属本身更冷。\n\n"
+            "## source_name\nAvanza STEM\n"
+            "## source_url\nhttps://example.com/metal-cold\n"
+        )
+        ok, text = self.gate.validate_series_brief(glued)
+        self.assertTrue(ok, text)
+        self.assertTrue(text.startswith("## title"))
+        self.assertIn("金属摸起来更冷", text)
+        self.assertNotIn("This looks good", text)
+
     def test_brief_rejects_chore_reminder_without_aha(self):
         ok, message = self.gate.validate_series_brief(
             "## title\n洗衣机要定期清洗\n"

@@ -527,12 +527,12 @@ def create_series_find_task(
 10. 不要写搜索量、关键词难度、竞品、产品。
 11. 不要碰：治病疗效、投资建议、法律结论、心理疗愈鸡汤、思想实验空谈、灵异与政治争议。
 
-【输出格式】每个小节都是单独一行、行首的二级标题。
+【输出格式】只输出下面五个二级标题，不要英文思考过程，不要写 This looks good，不要把 ## 粘在上一句后面。
 
 ## title
 （一句话点出误判或反差，不要写期号，不要夸张词）
 ## fact
-（两三句：先点破常见想法，再说核对过的事实）
+（两三句：先点破常见想法，再说核对过的事实；可用「很多人以为…但实际上…」）
 ## why
 （带走一句：下次怎么看、别再信什么）
 ## source_name
@@ -551,7 +551,7 @@ def create_series_find_task(
         expected_output=expected_output,
         agent=researcher,
         guardrail=brief_guardrail,
-        guardrail_max_retries=1,
+        guardrail_max_retries=2,
     )
 
 

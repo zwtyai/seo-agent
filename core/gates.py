@@ -222,19 +222,21 @@ class QualityGateSystem:
     ) -> tuple[bool, str]:
         """系列选题：一条事实、带走一句、一个可打开的原文来源。"""
         problems: list[str] = []
-        text = _strip_fence(markdown)
-        sections = self._parse_sections(text)
+        text = normalize_series_brief_text(_strip_fence(markdown))
+        sections = self._parse_series_brief_sections(text)
 
         title = _first_line(sections.get("title", ""))
-        fact = _first_line(sections.get("fact", ""))
-        why = _first_line(sections.get("why", ""))
-        source_url = _first_url(sections.get("source_url", ""))
+        # 认知落差看整段事实，不要只取首行（模型常把「但实际上」写在后面）。
+        fact = (sections.get("fact") or "").strip()
+        why = _first_line(sections.get("why", "")) or (sections.get("why") or "").strip()
+        source_name = _first_line(sections.get("source_name", ""))
+        source_url = _first_url(sections.get("source_url", "")) or _first_url(text)
 
         if len(title) < 4:
             problems.append("缺少 ## title，用一句话写出这条冷知识的标题。")
         else:
             problems.extend(self._series_title_problems(title))
-        if len(fact) < 8:
+        if len(re.sub(r"\s+", "", fact)) < 8:
             problems.append("缺少 ## fact，用自己的话写清这条事实。")
         if len(why) < 4:
             problems.append("缺少 ## why，写一句可带走的小判断。")
@@ -248,8 +250,7 @@ class QualityGateSystem:
         else:
             canonical, source_problems = self._canonicalize_series_source(source_url)
             problems.extend(source_problems)
-            if canonical and canonical != source_url:
-                text = text.replace(source_url, canonical)
+            if canonical:
                 source_url = canonical
 
         folded_title = self._strip_issue_prefix(self._normalize_text(title))
@@ -269,7 +270,15 @@ class QualityGateSystem:
 
         if problems:
             return False, "选题未通过，请重找一条：\n- " + "\n- ".join(problems)
-        return True, text
+
+        # 交回规范格式，避免模型夹带英文自检前言。
+        return True, format_series_brief(
+            title=title,
+            fact=fact,
+            why=why,
+            source_name=source_name or "来源",
+            source_url=source_url,
+        )
 
     def validate_series_card(
         self,
@@ -360,7 +369,9 @@ class QualityGateSystem:
         has_contrast = bool(
             re.search(
                 r"其实|并不是|并非|并不|反而|不必|误以为|常以为|错觉|并不等于|"
-                r"并不能|不是因为|并没有|没那么|不一定|不见得|并不代表",
+                r"并不能|不是因为|并没有|没那么|不一定|不见得|并不代表|"
+                r"但实际上|实际上|很多人认为|很多人以为|很多人觉得|普遍认为|"
+                r"通常以为|常有人以为|但事实|真正原因|并不是因为",
                 blob,
             )
         )
@@ -510,6 +521,36 @@ class QualityGateSystem:
     @staticmethod
     def _parse_sections(markdown: str) -> dict[str, str]:
         """解析 Markdown sections。兼容「## key」换行写，或「## key: 内容」写在同一行。"""
+        return QualityGateSystem._parse_heading_sections(
+            markdown,
+            aliases=_XHS_SECTION_ALIASES,
+            spaced_names=_XHS_SECTION_NAMES,
+        )
+
+    @staticmethod
+    def _parse_series_brief_sections(markdown: str) -> dict[str, str]:
+        """系列选题简报：兼容中英文别名，以及 Title:/Fact: 无 ## 写法。"""
+        sections = QualityGateSystem._parse_heading_sections(
+            markdown,
+            aliases=_SERIES_BRIEF_ALIASES,
+            spaced_names=_SERIES_BRIEF_NAMES,
+        )
+        if sections.get("title") and sections.get("fact"):
+            return sections
+        # 模型偶发写成 Title: / Fact: 而不用 ##
+        loose = _parse_labeled_brief_lines(markdown)
+        for key, value in loose.items():
+            if value and not sections.get(key):
+                sections[key] = value
+        return sections
+
+    @staticmethod
+    def _parse_heading_sections(
+        markdown: str,
+        *,
+        aliases: dict[str, str],
+        spaced_names: set[str],
+    ) -> dict[str, str]:
         parts = re.split(r"(?m)^##\s+", markdown or "")
         sections: dict[str, str] = {}
         for part in parts[1:]:
@@ -517,7 +558,6 @@ class QualityGateSystem:
             if not lines:
                 continue
             header = re.sub(r"（.*?）|\(.*?\)", "", lines[0]).strip()
-            # 「cover_title: 内容」或「cover_title 内容」
             inline = re.match(
                 r"^([A-Za-z0-9_\u4e00-\u9fff]+)\s*[:：]\s*(.*)$",
                 header,
@@ -532,15 +572,18 @@ class QualityGateSystem:
                     r"^([A-Za-z0-9_\u4e00-\u9fff]+)\s+(.+)$",
                     header,
                 )
-                if spaced and spaced.group(1).lower() in _XHS_SECTION_NAMES:
-                    name = spaced.group(1).strip().lower()
+                key = spaced.group(1).strip().lower() if spaced else ""
+                if spaced and (
+                    key in spaced_names or aliases.get(key) in spaced_names
+                ):
+                    name = key
                     first = spaced.group(2).strip()
                     rest = "\n".join(lines[1:]).strip()
                     body = "\n".join(item for item in (first, rest) if item).strip()
                 else:
                     name = header.strip().lower()
                     body = "\n".join(lines[1:]).strip()
-            alias = _XHS_SECTION_ALIASES.get(name, name)
+            alias = aliases.get(name, name)
             sections[alias] = body
         return sections
 
@@ -669,6 +712,112 @@ _XHS_SECTION_ALIASES = {
     "来源备注": "source_note",
     "来源": "source_note",
 }
+_SERIES_BRIEF_NAMES = {
+    "title",
+    "fact",
+    "why",
+    "source_name",
+    "source_url",
+}
+_SERIES_BRIEF_ALIASES = {
+    "title": "title",
+    "fact": "fact",
+    "why": "why",
+    "source_name": "source_name",
+    "source_url": "source_url",
+    "标题": "title",
+    "事实": "fact",
+    "带走一句": "why",
+    "为什么值得说": "why",
+    "来源名": "source_name",
+    "来源站点": "source_name",
+    "来源链接": "source_url",
+    "来源": "source_url",
+}
+
+
+def normalize_series_brief_text(text: str) -> str:
+    """修好模型把前言粘在 ## title 同一行、或夹带英文自检的情况。"""
+    raw = (text or "").strip()
+    if not raw:
+        return ""
+    # This looks good.## title → 换行后再解析
+    raw = re.sub(r"([^\n#])##\s*", r"\1\n## ", raw)
+    # 只保留从第一个简报标题开始的内容
+    match = re.search(
+        r"(?im)^##\s*(?:title|标题|fact|事实|why|带走一句)\b",
+        raw,
+    )
+    if match:
+        raw = raw[match.start() :]
+    return raw.strip()
+
+
+def format_series_brief(
+    *,
+    title: str,
+    fact: str,
+    why: str,
+    source_name: str,
+    source_url: str,
+) -> str:
+    return (
+        f"## title\n{title.strip()}\n\n"
+        f"## fact\n{fact.strip()}\n\n"
+        f"## why\n{why.strip()}\n\n"
+        f"## source_name\n{source_name.strip()}\n\n"
+        f"## source_url\n{source_url.strip()}\n"
+    )
+
+
+def _parse_labeled_brief_lines(markdown: str) -> dict[str, str]:
+    """解析无 ## 的 Title:/Fact:/Why: 或 标题：/事实： 行块。"""
+    labels = {
+        "title": "title",
+        "fact": "fact",
+        "why": "why",
+        "source_name": "source_name",
+        "source_url": "source_url",
+        "标题": "title",
+        "事实": "fact",
+        "带走一句": "why",
+        "来源名": "source_name",
+        "来源站点": "source_name",
+        "来源链接": "source_url",
+        "来源": "source_url",
+    }
+    sections: dict[str, str] = {}
+    current: str | None = None
+    buf: list[str] = []
+
+    def flush() -> None:
+        nonlocal current, buf
+        if current:
+            sections[current] = "\n".join(buf).strip()
+        current = None
+        buf = []
+
+    for line in (markdown or "").splitlines():
+        stripped = line.strip()
+        matched = re.match(
+            r"^\**([A-Za-z0-9_一-龥]+)\**\s*[:：]\s*(.*)$",
+            stripped,
+        )
+        if matched:
+            key = matched.group(1).strip().lower()
+            # English labels come in mixed case; Chinese stay as-is for alias map
+            raw_key = matched.group(1).strip()
+            alias = labels.get(key) or labels.get(raw_key)
+            if alias:
+                flush()
+                current = alias
+                first = matched.group(2).strip()
+                buf = [first] if first else []
+                continue
+        if current is not None:
+            buf.append(line)
+    flush()
+    return sections
 
 
 def _strip_fence(text: str) -> str:
