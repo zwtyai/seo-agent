@@ -55,7 +55,12 @@ class SeriesGateTest(unittest.TestCase):
         self.assertEqual(coldfact.series_batch_size, 3)
         self.assertEqual(coldfact.series_timezone, "Asia/Shanghai")
         self.assertFalse(coldfact.series_require_live_source)
-        self.assertIn("日常生活里的小误判", coldfact.description)
+        self.assertIn("原来如此", coldfact.description)
+        scenes = coldfact.keyword_scene_hints
+        self.assertIn("感官与错觉", scenes)
+        self.assertIn("城市出行与通勤", scenes)
+        self.assertIn("穿衣鞋帽与体感", scenes)
+        self.assertGreaterEqual(len(scenes), 15)
         voice = KnowledgeBaseLoader(coldfact).load()
         self.assertEqual(voice["type"], "series_voice")
         self.assertIn("带走一句", voice["content"])
@@ -74,7 +79,7 @@ class SeriesGateTest(unittest.TestCase):
     def test_brief_rejects_empty_takeaway_and_hype_title(self):
         ok, message = self.gate.validate_series_brief(
             "## title\n香蕉灵敏万亿倍\n"
-            "## fact\n香蕉由子房发育而来，植物学上算浆果。\n"
+            "## fact\n其实香蕉由子房发育而来，植物学上算浆果。\n"
             "## why\n这完全颠覆了我们的固有印象。\n"
             "## source_name\n百科\n"
             "## source_url\nhttps://www.britannica.com/plant/banana\n"
@@ -82,6 +87,36 @@ class SeriesGateTest(unittest.TestCase):
         self.assertFalse(ok)
         self.assertIn("夸张词", message)
         self.assertIn("带走一句", message)
+
+    def test_brief_rejects_chore_reminder_without_aha(self):
+        ok, message = self.gate.validate_series_brief(
+            "## title\n洗衣机要定期清洗\n"
+            "## fact\n记得定期清洗洗衣机，不然会有异味。\n"
+            "## why\n下次记得清洗洗衣机。\n"
+            "## source_name\n百科\n"
+            "## source_url\nhttps://www.britannica.com/plant/banana\n"
+        )
+        self.assertFalse(ok)
+        self.assertIn("说明书", message)
+
+    def test_brief_rejects_household_saturation(self):
+        recent = [
+            "第 019 期 · 冰箱冷藏室的温度别只看显示屏",
+            "第 022 期 · 洗衣机不会自己洗干净",
+            "第 023 期 · 闹钟响后按小睡只会让你更不清醒",
+            "第 017 期 · 柔顺剂别乱用毛巾和运动服会罢工",
+            "第 008 期 · 周末补觉补不回睡眠债",
+        ]
+        ok, message = self.gate.validate_series_brief(
+            "## title\n冰箱门别开太久\n"
+            "## fact\n很多人误以为显示屏准，其实冷藏室各层温度不同。\n"
+            "## why\n下次别只看冰箱面板温度。\n"
+            "## source_name\n百科\n"
+            "## source_url\nhttps://www.britannica.com/plant/banana\n",
+            existing_titles=recent,
+        )
+        self.assertFalse(ok)
+        self.assertIn("最近", message)
 
     def test_brief_rejects_unresolvable_grounding_redirect(self):
         from unittest.mock import patch
@@ -116,7 +151,7 @@ class SeriesGateTest(unittest.TestCase):
         ):
             ok, text = self.gate.validate_series_brief(
                 "## title\n香蕉算浆果\n"
-                "## fact\n香蕉由子房发育而来，植物学上算浆果。\n"
+                "## fact\n很多人以为香蕉不是浆果，其实它由子房发育而来，植物学上算浆果。\n"
                 "## why\n下次别把超市分类当成植物学结论。\n"
                 "## source_name\n百科\n"
                 f"## source_url\n{grounding}\n"
