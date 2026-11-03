@@ -56,7 +56,11 @@ class SeriesGateTest(unittest.TestCase):
         self.assertEqual(coldfact.series_timezone, "Asia/Shanghai")
         self.assertFalse(coldfact.series_require_live_source)
         self.assertIn("原来如此", coldfact.description)
-        self.assertIn("感官与错觉", coldfact.scene_hints if hasattr(coldfact, "scene_hints") else coldfact.keyword_scene_hints)
+        scenes = coldfact.keyword_scene_hints
+        self.assertIn("感官与错觉", scenes)
+        self.assertIn("城市出行与通勤", scenes)
+        self.assertIn("穿衣鞋帽与体感", scenes)
+        self.assertGreaterEqual(len(scenes), 15)
         voice = KnowledgeBaseLoader(coldfact).load()
         self.assertEqual(voice["type"], "series_voice")
         self.assertIn("带走一句", voice["content"])
