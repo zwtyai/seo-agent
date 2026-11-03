@@ -7,7 +7,7 @@ product:
   # Pages 源是 /docs，公网路径对应 docs/series/coldfact/。
   # 官网反代 docs/ 时请排除 /series/，避免冷知识进 yibelin。
   domain: "https://zwtyai.github.io/seo-agent/series/coldfact/"
-  description: "每天一条，纠正一个日常生活里的小误判"
+  description: "每天一条，纠正一个反直觉但可核对的日常误判，读完要有「原来如此」"
   mode: series
 
 # 每天按北京时间切目录，一次跑满 3 条。
@@ -18,16 +18,23 @@ series:
   require_live_source: false
 
 keyword_strategy:
-  # 主定位是日常误判；人体常识只作配菜子桶。
+  # 要有认知落差；家务桶易滥，靠轮换压住。
   seed_keywords:
     - "日常误判"
-    - "生活常识纠正"
+    - "反直觉常识"
+    - "常见误解纠正"
   scene_hints:
+    - "感官与错觉"
+    - "材料与物理小现象"
+    - "动植物与自然观察"
+    - "天气空气与体感"
+    - "城市出行与空间"
+    - "家用小物用法"
+    - "人体常见误解"
+    - "数字屏幕习惯"
     - "厨房与食物"
     - "清洁与洗衣"
     - "睡眠与疲劳"
-    - "家用小物用法"
-    - "人体常见误解"
   search_volume:
     min: 0
     max: 0
@@ -98,10 +105,11 @@ monitoring:
 
 agents:
   researcher:
-    temperature: 0.4
+    # 略提高，避免总落在同几条家务提醒上。
+    temperature: 0.65
     use_grounding: true
   writer:
-    temperature: 0.7
+    temperature: 0.75
     style: "curious"
   editor:
     temperature: 0.3

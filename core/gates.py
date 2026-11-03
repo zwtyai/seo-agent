@@ -240,6 +240,9 @@ class QualityGateSystem:
             problems.append("缺少 ## why，写一句可带走的小判断。")
         else:
             problems.extend(self._series_takeaway_problems(why))
+        problems.extend(
+            self._series_aha_problems(title, fact, why, existing_titles or [])
+        )
         if not source_url:
             problems.append("缺少 ## source_url。写一个 http 开头的原文页，找不到就不要交这条。")
         else:
@@ -343,6 +346,51 @@ class QualityGateSystem:
         if hits:
             return ["标题删掉这些夸张词：" + "、".join(dict.fromkeys(hits))]
         return []
+
+    def _series_aha_problems(
+        self,
+        title: str,
+        fact: str,
+        why: str,
+        existing_titles: list[str],
+    ) -> list[str]:
+        """要有认知落差；家务场景连发时强制换角度。"""
+        problems: list[str] = []
+        blob = f"{title}\n{fact}\n{why}"
+        has_contrast = bool(
+            re.search(
+                r"其实|并不是|并非|并不|反而|不必|误以为|常以为|错觉|并不等于|"
+                r"并不能|不是因为|并没有|没那么|不一定|不见得|并不代表",
+                blob,
+            )
+        )
+        chore_only = bool(
+            re.search(
+                r"记得清理|记得清洗|要定期|别忘了洗|定期清洗|记得洗|"
+                r"温度要调|记得调温",
+                blob,
+            )
+        )
+        if chore_only and not has_contrast:
+            problems.append(
+                "这是说明书提醒，不是冷知识。改成「大家常以为…其实…」的反差事实。"
+            )
+        elif not has_contrast:
+            problems.append(
+                "缺少认知落差。事实里写清「常见想法」和「其实如何」，让人有「原来如此」。"
+            )
+
+        household = re.compile(
+            r"冰箱|洗衣|柔顺|洗碗|砧板|睡眠|午睡|闹钟|小睡|掏耳朵|棉签|洗衣液"
+        )
+        if household.search(blob):
+            recent = existing_titles[:9]
+            saturated = sum(1 for old in recent if household.search(old or ""))
+            if saturated >= 4:
+                problems.append(
+                    "最近厨房/洗衣/睡眠类已经很多。换感官错觉、材料物理、自然、体感、出行或数字习惯。"
+                )
+        return problems
 
     def _series_takeaway_problems(self, takeaway: str) -> list[str]:
         text = (takeaway or "").strip()
