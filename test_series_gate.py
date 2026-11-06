@@ -55,17 +55,19 @@ class SeriesGateTest(unittest.TestCase):
         self.assertEqual(coldfact.series_batch_size, 3)
         self.assertEqual(coldfact.series_timezone, "Asia/Shanghai")
         self.assertFalse(coldfact.series_require_live_source)
-        self.assertIn("原来如此", coldfact.description)
+        self.assertIn("转述", coldfact.description)
         scenes = coldfact.keyword_scene_hints
+        self.assertIn("天气雷电与自然现象", scenes)
         self.assertIn("感官与错觉", scenes)
-        self.assertIn("城市出行与通勤", scenes)
-        self.assertIn("穿衣鞋帽与体感", scenes)
+        self.assertIn("材料与物理小现象", scenes)
+        self.assertEqual(scenes[0], "天气雷电与自然现象")
         self.assertGreaterEqual(len(scenes), 15)
         voice = KnowledgeBaseLoader(coldfact).load()
         self.assertEqual(voice["type"], "series_voice")
         self.assertIn("带走一句", voice["content"])
         self.assertIn("明确不做", voice["content"])
-        self.assertIn("厨房", voice["content"])
+        self.assertIn("谈资", voice["content"])
+        self.assertIn("闪电", voice["content"])
 
     def test_brief_requires_a_real_url(self):
         ok, message = self.gate.validate_series_brief(
@@ -134,6 +136,27 @@ https://www.ceramics.org/ceramic-tech-today/glass-ceramics/glass-flow-in-medieva
         )
         self.assertFalse(ok)
         self.assertIn("说明书", message)
+
+    def test_brief_rejects_weak_lifestyle_soft_debunk(self):
+        ok, message = self.gate.validate_series_brief(
+            "## title\n坐得笔直，不等于最佳坐姿\n"
+            "## fact\n很多人以为坐得笔直最好，其实不等于最佳坐姿。\n"
+            "## why\n下次别把笔直当成唯一正确姿势。\n"
+            "## source_name\n百科\n"
+            "## source_url\nhttps://www.britannica.com/plant/banana\n"
+        )
+        self.assertFalse(ok)
+        self.assertIn("谈资", message)
+
+    def test_brief_accepts_picture_rewrite_fact(self):
+        ok, text = self.gate.validate_series_brief(
+            "## title\n闪电其实常从地面往上打\n"
+            "## fact\n看起来雷电从上往下劈，其实可见的回击往往是从地面往上冲。\n"
+            "## why\n下次看雷暴，别只想成「天往下砸」。\n"
+            "## source_name\nNOAA\n"
+            "## source_url\nhttps://www.noaa.gov/jetstream/lightning\n"
+        )
+        self.assertTrue(ok, text)
 
     def test_brief_rejects_household_saturation(self):
         recent = [
