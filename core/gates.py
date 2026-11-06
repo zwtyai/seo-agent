@@ -363,7 +363,7 @@ class QualityGateSystem:
         why: str,
         existing_titles: list[str],
     ) -> list[str]:
-        """要有认知落差；家务场景连发时强制换角度。"""
+        """要有谈资和画面改写；拒轻量生活辟谣；家务连发时强制换角度。"""
         problems: list[str] = []
         blob = f"{title}\n{fact}\n{why}"
         has_contrast = bool(
@@ -382,13 +382,39 @@ class QualityGateSystem:
                 blob,
             )
         )
+        # 轻量生活辟谣：只否定妙招/说法，没有画面改写（方向、错觉、归属、因果）。
+        weak_soft = bool(
+            re.search(
+                r"不等于.{0,6}(最佳|更好|最好)|并不等于.{0,6}(最佳|更好|最好)|"
+                r"并不是.{0,6}(最佳|更好|最好)|并非.{0,6}(最佳|更好|最好)|"
+                r"不会.{0,8}(看坏|弄坏|伤害|损伤)|"
+                r"并不能.{0,10}(重置|恢复|消除|刷新)|"
+                r"(其实没差|其实差不多|其实没那么)|"
+                r"(坐得笔直|最佳坐姿|暗光.{0,6}读|闻咖啡豆|咖啡豆.{0,6}嗅觉)",
+                blob,
+            )
+        )
+        has_picture = bool(
+            re.search(
+                r"看起来|看上去|方向|从.{0,6}(往|向|到)|往上|往下|错觉|"
+                r"其实是|其实算|其实是从|归属|分类|结构|机制|回击|地面",
+                blob,
+            )
+        )
         if chore_only and not has_contrast:
             problems.append(
-                "这是说明书提醒，不是冷知识。改成「大家常以为…其实…」的反差事实。"
+                "这是说明书提醒，不是冷知识。改成有画面改写的反差事实，例如「闪电其实常从地面往上打」。"
+            )
+        elif weak_soft and not has_picture:
+            problems.append(
+                "这是轻量生活辟谣，谈资不够。"
+                "换「方向反了 / 看到的是错觉 / 归属翻了」这类会改写画面的事实"
+                "（例如闪电其实常从地面往上打），不要「不等于最佳 / 不会看坏 / 并不能重置」。"
             )
         elif not has_contrast:
             problems.append(
-                "缺少认知落差。事实里写清「常见想法」和「其实如何」，让人有「原来如此」。"
+                "缺少认知落差。事实里写清「常见想法」和「其实如何」，"
+                "最好还能改写脑子里的画面，让人想转述。"
             )
 
         household = re.compile(
@@ -399,7 +425,8 @@ class QualityGateSystem:
             saturated = sum(1 for old in recent if household.search(old or ""))
             if saturated >= 4:
                 problems.append(
-                    "最近厨房/洗衣/睡眠类已经很多。换感官错觉、材料物理、自然、体感、出行或数字习惯。"
+                    "最近厨房/洗衣/睡眠类已经很多。"
+                    "换天气雷电、感官错觉、材料物理、动植物或人体结构误解。"
                 )
         return problems
 

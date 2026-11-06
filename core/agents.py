@@ -101,8 +101,8 @@ class AgentFactory:
         """动态生成研究员goal"""
         if self.config.mode == "series":
             return (
-                f"为栏目「{self.config.name}」找 1 条反直觉、可核对的日常误判。"
-                "要有「原来如此」的落差，不要说明书式提醒；必须有可打开的原文 URL。"
+                f"为栏目「{self.config.name}」找 1 条让人想转述的反直觉事实。"
+                "要有谈资和画面改写，不要轻量生活辟谣或说明书提醒；必须有可打开的原文 URL。"
             )
         seed = getattr(self, "_seed", None) or self.config.get_primary_seed_keyword()
         types_str = "、".join(self.config.keyword_types) if self.config.keyword_types else "长尾"
@@ -119,19 +119,20 @@ class AgentFactory:
         if self.config.mode == "series":
             scenes = "、".join(self.config.keyword_scene_hints) or "日常场景"
             return f"""你为固定栏目「{self.config.name}」找素材，不写 SEO 长文，也不做竞品分析。
-栏目定位：{self.config.description or "反直觉但可核对的日常误判"}。
+栏目定位：{self.config.description or "让人想转述的反直觉事实：有画面、可核对"}。
 
 规则：
 1. 用 Google Search Grounding 找 1 条具体、可核对的事实。搜索可带 misconception / myth / 「其实不是」等词。
-2. 必须有认知落差：大家常以为 A，其实是 B。不要交「记得清理洗衣机」这类说明书提醒。
-3. 场景在这些里轮换，别总挤厨房洗衣睡觉：{scenes}。
-4. 来源必须是这次搜索里打开过的原文页：百科、博物馆、论文、正规媒体、权威机构。不要交 grounding 跳转短链。
-5. 用自己的话概括，不要整段抄原文。
-6. ## why 写「带走一句」：下次怎么看、别再信什么。不要写「颠覆固有印象」。
-7. 标题不要夸张词：震惊、万亿倍、竟然、绝了；但可以点出反差。
-8. 不要碰疗效、投资、法律结论、心理鸡汤、思想实验、灵异与政治争议。
-9. 不要写搜索量、KD、用户痛点或产品推荐。
-10. 交卷只用这些行首二级标题：title、fact、why、source_name、source_url。"""
+2. 必须过谈资 + 画面改写：吃饭会想跟人说；脑子里的默认图被改掉（方向反了、错觉、归属翻了、因果搞反）。
+3. 弱选题一律换：坐得笔直不等于最佳坐姿、暗光不会看坏眼、闻咖啡豆不能重置嗅觉、不等于最佳 / 不会真坏 / 并不能重置、说明书提醒。
+4. 场景在这些里轮换，优先有画面的世界，别总挤厨房洗衣睡觉：{scenes}。
+5. 来源必须是这次搜索里打开过的原文页：百科、博物馆、论文、正规媒体、权威机构。不要交 grounding 跳转短链。
+6. 用自己的话概括，不要整段抄原文；事实写出「看起来怎样 → 其实怎样」。
+7. ## why 写「带走一句」：下次怎么看、别再信什么。不要写「颠覆固有印象」。
+8. 标题不要夸张词：震惊、万亿倍、竟然、绝了；但可以点出反差或画面。
+9. 不要碰疗效、投资、法律结论、心理鸡汤、思想实验、灵异与政治争议。
+10. 不要写搜索量、KD、用户痛点或产品推荐。
+11. 交卷只用这些行首二级标题：title、fact、why、source_name、source_url。"""
         exclusions_str = "、".join(self.config.keyword_exclusions)
         scene = "、".join(self.config.keyword_scene_hints)
         scene_line = f"场景要具体（{scene}）。" if scene else "场景要具体。"
